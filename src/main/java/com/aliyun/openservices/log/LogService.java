@@ -17,6 +17,22 @@ import java.util.Map;
 
 public interface LogService {
 
+    PostGraphStoreDataResponse postGraphStoreData(PostGraphStoreDataRequest request) throws LogException;
+    GetGraphStoreDataResponse getGraphStoreData(GetGraphStoreDataRequest request) throws LogException;
+
+	// GraphStore management: one request per call, no SDK lifecycle polling.
+    CreateGraphStoreResponse createGraphStore(CreateGraphStoreRequest request) throws LogException;
+    GetGraphStoreResponse getGraphStore(GetGraphStoreRequest request) throws LogException;
+    ListGraphStoresResponse listGraphStores(ListGraphStoresRequest request) throws LogException;
+    DeleteGraphStoreResponse deleteGraphStore(DeleteGraphStoreRequest request) throws LogException;
+    SplitGraphStoreShardResponse splitGraphStoreShard(SplitGraphStoreShardRequest request) throws LogException;
+    GetGraphStoreBaseSchemaResponse getGraphStoreBaseSchema(GetGraphStoreBaseSchemaRequest request) throws LogException;
+    CreateGraphStoreCollectionSchemaResponse createGraphStoreCollectionSchema(CreateGraphStoreCollectionSchemaRequest request) throws LogException;
+    GetGraphStoreCollectionSchemaResponse getGraphStoreCollectionSchema(GetGraphStoreCollectionSchemaRequest request) throws LogException;
+    ListGraphStoreCollectionSchemasResponse listGraphStoreCollectionSchemas(ListGraphStoreCollectionSchemasRequest request) throws LogException;
+    UpdateGraphStoreCollectionSchemaResponse updateGraphStoreCollectionSchema(UpdateGraphStoreCollectionSchemaRequest request) throws LogException;
+    DeleteGraphStoreCollectionSchemaResponse deleteGraphStoreCollectionSchema(DeleteGraphStoreCollectionSchemaRequest request) throws LogException;
+
 	/**
 	 * Get The log status(histogram info) from log service server which match
 	 * input parameters. All the logs with logstore and topic in [from, to)

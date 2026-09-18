@@ -6457,6 +6457,264 @@ public class Client implements LogService {
 		return listResp;
 	}
 
+
+    @Override
+    public PostGraphStoreDataResponse postGraphStoreData(PostGraphStoreDataRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        CodingUtils.assertParameterNotNull(request.getLogGroup(), "logGroup");
+        CodingUtils.assertParameterNotNull(request.getCompressType(), "compressType");
+        if (!request.getLogGroup().isInitialized()) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "uninitialized LogGroup", "");
+        }
+        byte[] body = request.getLogGroup().toByteArray();
+        checkBodyRawSize(body.length);
+        Map<String, String> headers = GetCommonHeadPara(request.GetProject());
+        headers.put(Consts.CONST_CONTENT_TYPE, Consts.CONST_PROTO_BUF);
+        headers.put(Consts.CONST_X_SLS_BODYRAWSIZE, String.valueOf(body.length));
+        if (request.getCompressType() != CompressType.NONE) {
+            headers.put(Consts.CONST_X_SLS_COMPRESSTYPE, request.getCompressType().toString());
+        }
+        body = Utils.compressLogBytes(body, request.getCompressType());
+        ResponseMessage response = sendLogBytes(request.GetProject(), body,
+                "/graphstore/" + request.getStoreName() + "/write", new HashMap<String, String>(), headers);
+        return new PostGraphStoreDataResponse(response.getHeaders());
+    }
+
+    @Override
+    public GetGraphStoreDataResponse getGraphStoreData(GetGraphStoreDataRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        CodingUtils.assertStringNotNullOrEmpty(request.getQuery(), "query");
+        JSONObject query = new JSONObject();
+        query.put("query", request.getQuery());
+        byte[] body = encodeToUtf8(query.toJSONString());
+        Map<String, String> headers = GetCommonHeadPara(request.GetProject());
+        headers.put(Consts.CONST_CONTENT_TYPE, Consts.CONST_SLS_JSON);
+        headers.put(Consts.CONST_X_SLS_BODYRAWSIZE, String.valueOf(body.length));
+        headers.put(Consts.CONST_ACCEPT_ENCODING, CompressType.LZ4.toString());
+        ResponseMessage response = SendData(request.GetProject(), HttpMethod.POST,
+                "/graphstore/" + request.getStoreName() + "/query", new HashMap<String, String>(), headers, body);
+        return GetGraphStoreDataResponse.deserializeFrom(response);
+    }
+
+    private static void validateGraphStoreName(String name) throws LogException {
+        if (name == null || !name.matches("[A-Za-z0-9_-]+")) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "invalid GraphStore path segment", "");
+        }
+    }
+
+    private static <T> T graphStoreField(JSONObject object, String name, Class<T> type, String requestId)
+            throws LogException {
+        Object value = object.get(name);
+        if (!type.isInstance(value)) {
+            throw new LogException(ErrorCodes.BAD_RESPONSE, "invalid GraphStore field " + name, requestId);
+        }
+        return type.cast(value);
+    }
+
+    private static long graphStoreLong(JSONObject object, String name, String requestId) throws LogException {
+        Object value = object.get(name);
+        if (value instanceof Integer || value instanceof Long) {
+            return ((Number) value).longValue();
+        }
+        if (value instanceof java.math.BigInteger && ((java.math.BigInteger) value).bitLength() <= 63) {
+            return ((java.math.BigInteger) value).longValue();
+        }
+        throw new LogException(ErrorCodes.BAD_RESPONSE, "invalid GraphStore integer " + name, requestId);
+    }
+
+    private static int graphStoreInt(JSONObject object, String name, String requestId) throws LogException {
+        long value = graphStoreLong(object, name, requestId);
+        if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+            throw new LogException(ErrorCodes.BAD_RESPONSE, "GraphStore integer overflow " + name, requestId);
+        }
+        return (int) value;
+    }
+
+    private JSONObject graphStoreResponseBody(ResponseMessage response, String requestId) throws LogException {
+        try {
+            JSONObject value = parseResponseBody(response, requestId);
+            if (value == null) {
+                throw new LogException(ErrorCodes.BAD_RESPONSE, "GraphStore response must be a JSON object", requestId);
+            }
+            return value;
+        } catch (ClassCastException error) {
+            throw new LogException(ErrorCodes.BAD_RESPONSE, "GraphStore response must be a JSON object", error, requestId);
+        }
+    }
+
+    private static GraphStore readGraphStore(JSONObject value, String requestId) throws LogException {
+        return new GraphStore(graphStoreInt(value, "projectId", requestId),
+                graphStoreField(value, "storeName", String.class, requestId),
+                graphStoreField(value, "state", String.class, requestId),
+                graphStoreInt(value, "currentShardCount", requestId));
+    }
+
+    private byte[] graphStoreSchemaBody(BasicRequest request) throws LogException {
+        try {
+            // Preserve JSON value semantics, including explicit nulls and shared object values.
+            return encodeToUtf8(JSONObject.toJSONString(request.getBody(),
+                    com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue,
+                    com.alibaba.fastjson.serializer.SerializerFeature.DisableCircularReferenceDetect));
+        } catch (JSONException | StackOverflowError error) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "GraphStore schema must be an acyclic JSON value", "");
+        }
+    }
+
+    @Override
+    public CreateGraphStoreResponse createGraphStore(CreateGraphStoreRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        CodingUtils.assertParameterNotNull(request.getBaseSchema(), "baseSchema");
+        ResponseMessage response = sendJson(request, graphStoreSchemaBody(request));
+        return new CreateGraphStoreResponse(response.getHeaders());
+    }
+
+    @Override
+    public GetGraphStoreResponse getGraphStore(GetGraphStoreRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        ResponseMessage response = sendJson(request);
+        String requestId = GetRequestId(response.getHeaders());
+        JSONObject value = graphStoreResponseBody(response, requestId);
+        return new GetGraphStoreResponse(response.getHeaders(), readGraphStore(value, requestId));
+    }
+
+    @Override
+    public ListGraphStoresResponse listGraphStores(ListGraphStoresRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        ResponseMessage response = sendJson(request);
+        String requestId = GetRequestId(response.getHeaders());
+        JSONObject value = graphStoreResponseBody(response, requestId);
+        JSONArray items = graphStoreField(value, "stores", JSONArray.class, requestId);
+        List<GraphStore> stores = new ArrayList<GraphStore>(items.size());
+        for (Object item : items) {
+            if (!(item instanceof JSONObject)) {
+                throw new LogException(ErrorCodes.BAD_RESPONSE, "invalid GraphStore list item", requestId);
+            }
+            stores.add(readGraphStore((JSONObject) item, requestId));
+        }
+        long count = graphStoreLong(value, "count", requestId);
+        if (count < 0) {
+            throw new LogException(ErrorCodes.BAD_RESPONSE, "negative GraphStore count", requestId);
+        }
+        return new ListGraphStoresResponse(response.getHeaders(), stores, count,
+                graphStoreLong(value, "total", requestId));
+    }
+
+    @Override
+    public DeleteGraphStoreResponse deleteGraphStore(DeleteGraphStoreRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        ResponseMessage response = sendJson(request);
+        return new DeleteGraphStoreResponse(response.getHeaders());
+    }
+
+    @Override
+    public SplitGraphStoreShardResponse splitGraphStoreShard(SplitGraphStoreShardRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        if (request.getSplitHash() != null &&
+                (request.getSplitHash().signum() < 0 || request.getSplitHash().bitLength() > 64)) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "splitHash must be an unsigned 64-bit integer", "");
+        }
+        ResponseMessage response = sendJson(request);
+        return new SplitGraphStoreShardResponse(response.getHeaders());
+    }
+
+    @Override
+    public GetGraphStoreBaseSchemaResponse getGraphStoreBaseSchema(GetGraphStoreBaseSchemaRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        ResponseMessage response = sendJson(request);
+        String requestId = GetRequestId(response.getHeaders());
+        JSONObject value = graphStoreResponseBody(response, requestId);
+        return new GetGraphStoreBaseSchemaResponse(response.getHeaders(),
+                graphStoreInt(value, "projectId", requestId),
+                graphStoreField(value, "storeName", String.class, requestId),
+                graphStoreLong(value, "storeId", requestId),
+                graphStoreField(value, "baseSchema", JSONObject.class, requestId));
+    }
+
+    @Override
+    public CreateGraphStoreCollectionSchemaResponse createGraphStoreCollectionSchema(CreateGraphStoreCollectionSchemaRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        CodingUtils.assertParameterNotNull(request.getValue(), "value");
+        ResponseMessage response = sendJson(request, graphStoreSchemaBody(request));
+        return new CreateGraphStoreCollectionSchemaResponse(response.getHeaders());
+    }
+
+    @Override
+    public GetGraphStoreCollectionSchemaResponse getGraphStoreCollectionSchema(GetGraphStoreCollectionSchemaRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        ResponseMessage response = sendJson(request);
+        String requestId = GetRequestId(response.getHeaders());
+        JSONObject value = graphStoreResponseBody(response, requestId);
+        JSONObject schema = graphStoreField(value, "collectionSchema", JSONObject.class, requestId);
+        graphStoreLong(schema, "collectionSchemaId", requestId);
+        return new GetGraphStoreCollectionSchemaResponse(response.getHeaders(),
+                graphStoreInt(value, "projectId", requestId),
+                graphStoreField(value, "storeName", String.class, requestId), schema);
+    }
+
+    @Override
+    public ListGraphStoreCollectionSchemasResponse listGraphStoreCollectionSchemas(ListGraphStoreCollectionSchemasRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        ResponseMessage response = sendJson(request);
+        String requestId = GetRequestId(response.getHeaders());
+        JSONObject value = graphStoreResponseBody(response, requestId);
+        JSONArray items = graphStoreField(value, "collectionSchemas", JSONArray.class, requestId);
+        List<JSONObject> schemas = new ArrayList<JSONObject>(items.size());
+        for (Object item : items) {
+            if (!(item instanceof JSONObject)) {
+                throw new LogException(ErrorCodes.BAD_RESPONSE, "invalid GraphStore collection item", requestId);
+            }
+            JSONObject schema = (JSONObject) item;
+            graphStoreLong(schema, "collectionSchemaId", requestId);
+            schemas.add(schema);
+        }
+        String nextPageToken = value.containsKey("nextPageToken")
+                ? graphStoreField(value, "nextPageToken", String.class, requestId) : null;
+        return new ListGraphStoreCollectionSchemasResponse(response.getHeaders(),
+                graphStoreInt(value, "projectId", requestId),
+                graphStoreField(value, "storeName", String.class, requestId), schemas, nextPageToken);
+    }
+
+    @Override
+    public UpdateGraphStoreCollectionSchemaResponse updateGraphStoreCollectionSchema(UpdateGraphStoreCollectionSchemaRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        CodingUtils.assertParameterNotNull(request.getValue(), "value");
+        ResponseMessage response = sendJson(request, graphStoreSchemaBody(request));
+        return new UpdateGraphStoreCollectionSchemaResponse(response.getHeaders());
+    }
+
+    @Override
+    public DeleteGraphStoreCollectionSchemaResponse deleteGraphStoreCollectionSchema(DeleteGraphStoreCollectionSchemaRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        ResponseMessage response = sendJson(request);
+        return new DeleteGraphStoreCollectionSchemaResponse(response.getHeaders());
+    }
+
+
 	private ResponseMessage send(BasicRequest request) throws LogException {
 		CodingUtils.assertParameterNotNull(request, "request");
         final String project = request.GetProject();
@@ -6468,10 +6726,14 @@ public class Client implements LogService {
 
 	private ResponseMessage sendJson(BasicRequest request) throws LogException {
 		CodingUtils.assertParameterNotNull(request, "request");
-		final String project = request.GetProject();
-		final Map<String, String> headers = GetCommonHeadPara(project);
 		final Object body = request.getBody();
 		final byte[] requestBody = body == null ? new byte[0] : encodeToUtf8(JsonUtils.serialize(body));
+		return sendJson(request, requestBody);
+	}
+
+	private ResponseMessage sendJson(BasicRequest request, byte[] requestBody) throws LogException {
+		final String project = request.GetProject();
+		final Map<String, String> headers = GetCommonHeadPara(project);
 		headers.put(Consts.CONST_CONTENT_TYPE, Consts.CONST_SLS_JSON);
 		headers.put(Consts.CONST_X_SLS_BODYRAWSIZE, String.valueOf(requestBody.length));
 		return SendData(project, request.getMethod(), request.getUri(), request.GetAllParams(), headers, requestBody);
