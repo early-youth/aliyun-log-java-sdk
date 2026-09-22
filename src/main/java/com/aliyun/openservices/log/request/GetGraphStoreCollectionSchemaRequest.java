@@ -6,12 +6,12 @@ import com.aliyun.openservices.log.http.client.HttpMethod;
 public class GetGraphStoreCollectionSchemaRequest extends BasicRequest {
     private static final long serialVersionUID = 1L;
     private String storeName;
-    private long collectionSchemaId;
+    private String collectionSchemaName;
 
-    public GetGraphStoreCollectionSchemaRequest(String project, String storeName, long collectionSchemaId) {
+    public GetGraphStoreCollectionSchemaRequest(String project, String storeName, String collectionSchemaName) {
         super(project);
         this.storeName = storeName;
-        this.collectionSchemaId = collectionSchemaId;
+        this.collectionSchemaName = collectionSchemaName;
     }
 
     public String getStoreName() {
@@ -22,12 +22,12 @@ public class GetGraphStoreCollectionSchemaRequest extends BasicRequest {
         this.storeName = storeName;
     }
 
-    public long getCollectionSchemaId() {
-        return collectionSchemaId;
+    public String getCollectionSchemaName() {
+        return collectionSchemaName;
     }
 
-    public void setCollectionSchemaId(long collectionSchemaId) {
-        this.collectionSchemaId = collectionSchemaId;
+    public void setCollectionSchemaName(String collectionSchemaName) {
+        this.collectionSchemaName = collectionSchemaName;
     }
 
     @Override
@@ -37,6 +37,6 @@ public class GetGraphStoreCollectionSchemaRequest extends BasicRequest {
 
     @Override
     public String getUri() {
-        return "/graphstore/" + storeName + "/collectionschemas/" + collectionSchemaId;
+        return "/graphstore/" + storeName + "/collectionschemas/" + collectionSchemaName;
     }
 }

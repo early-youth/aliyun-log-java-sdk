@@ -16,7 +16,12 @@ ListGraphStoreCollectionSchemasResponse page = client.listGraphStoreCollectionSc
 Each of the 11 actions takes one BasicRequest subtype and returns its Response subtype.
 CreateGraphStoreRequest takes project, storeName, shardCount and a logical JSONObject.
 Collection Create/Update take a logical JSONObject; the SDK wraps it as value.
-Get/List retain opaque JSONObject schemas; storeId/collectionSchemaId are long.
+Get/Update/Delete request constructors take a String collectionSchemaName, never a numeric ID.
+Get/List retain opaque JSONObject schemas, require name and do not add an ID; storeId stays long.
+Update value.name must equal the path name; the service enforces immutable name/layout/keys.
+Pagination uses raw last-name tokens in byte order (default 100/max 1000); SDK tokens remain opaque.
+The service owns configurable name validation (default lowercase/digits/interior '-'/'_', 2..63)
+and the 10240 logical-schema create quota. SDK path validation only rejects unsafe segments.
 Nullable BigInteger splitHash supports the entire unsigned 64-bit range; null differs from zero.
 Nullable Integer offset/size/pageSize omit the corresponding parameter.
 

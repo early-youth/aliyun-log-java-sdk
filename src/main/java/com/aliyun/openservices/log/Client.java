@@ -6682,11 +6682,14 @@ public class Client implements LogService {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
+        validateGraphStoreName(request.getCollectionSchemaName());
         ResponseMessage response = sendJson(request);
         String requestId = GetRequestId(response.getHeaders());
         JSONObject value = graphStoreResponseBody(response, requestId);
         JSONObject schema = graphStoreField(value, "collectionSchema", JSONObject.class, requestId);
-        graphStoreLong(schema, "collectionSchemaId", requestId);
+        if (graphStoreField(schema, "name", String.class, requestId).isEmpty()) {
+            throw new LogException(ErrorCodes.BAD_RESPONSE, "empty GraphStore collection name", requestId);
+        }
         return new GetGraphStoreCollectionSchemaResponse(response.getHeaders(),
                 graphStoreInt(value, "projectId", requestId),
                 graphStoreField(value, "storeName", String.class, requestId), schema);
@@ -6707,7 +6710,9 @@ public class Client implements LogService {
                 throw new LogException(ErrorCodes.BAD_RESPONSE, "invalid GraphStore collection item", requestId);
             }
             JSONObject schema = (JSONObject) item;
-            graphStoreLong(schema, "collectionSchemaId", requestId);
+            if (graphStoreField(schema, "name", String.class, requestId).isEmpty()) {
+                throw new LogException(ErrorCodes.BAD_RESPONSE, "empty GraphStore collection name", requestId);
+            }
             schemas.add(schema);
         }
         String nextPageToken = value.containsKey("nextPageToken")
@@ -6722,6 +6727,7 @@ public class Client implements LogService {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
+        validateGraphStoreName(request.getCollectionSchemaName());
         CodingUtils.assertParameterNotNull(request.getValue(), "value");
         ResponseMessage response = sendJson(request, graphStoreSchemaBody(request));
         return new UpdateGraphStoreCollectionSchemaResponse(response.getHeaders());
@@ -6732,6 +6738,7 @@ public class Client implements LogService {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
+        validateGraphStoreName(request.getCollectionSchemaName());
         ResponseMessage response = sendJson(request);
         return new DeleteGraphStoreCollectionSchemaResponse(response.getHeaders());
     }

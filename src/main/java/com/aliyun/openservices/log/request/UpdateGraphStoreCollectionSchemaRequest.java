@@ -7,13 +7,13 @@ import com.alibaba.fastjson.JSONObject;
 public class UpdateGraphStoreCollectionSchemaRequest extends BasicRequest {
     private static final long serialVersionUID = 1L;
     private String storeName;
-    private long collectionSchemaId;
+    private String collectionSchemaName;
     private JSONObject value;
 
-    public UpdateGraphStoreCollectionSchemaRequest(String project, String storeName, long collectionSchemaId, JSONObject value) {
+    public UpdateGraphStoreCollectionSchemaRequest(String project, String storeName, String collectionSchemaName, JSONObject value) {
         super(project);
         this.storeName = storeName;
-        this.collectionSchemaId = collectionSchemaId;
+        this.collectionSchemaName = collectionSchemaName;
         this.value = value;
     }
 
@@ -25,12 +25,12 @@ public class UpdateGraphStoreCollectionSchemaRequest extends BasicRequest {
         this.storeName = storeName;
     }
 
-    public long getCollectionSchemaId() {
-        return collectionSchemaId;
+    public String getCollectionSchemaName() {
+        return collectionSchemaName;
     }
 
-    public void setCollectionSchemaId(long collectionSchemaId) {
-        this.collectionSchemaId = collectionSchemaId;
+    public void setCollectionSchemaName(String collectionSchemaName) {
+        this.collectionSchemaName = collectionSchemaName;
     }
 
     public JSONObject getValue() {
@@ -48,7 +48,7 @@ public class UpdateGraphStoreCollectionSchemaRequest extends BasicRequest {
 
     @Override
     public String getUri() {
-        return "/graphstore/" + storeName + "/collectionschemas/" + collectionSchemaId;
+        return "/graphstore/" + storeName + "/collectionschemas/" + collectionSchemaName;
     }
 
     @Override

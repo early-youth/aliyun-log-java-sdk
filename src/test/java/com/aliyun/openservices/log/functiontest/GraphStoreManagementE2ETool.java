@@ -114,7 +114,7 @@ public class GraphStoreManagementE2ETool {
                 case "CreateGraphStoreCollectionSchema":
                     response = client.createGraphStoreCollectionSchema(new CreateGraphStoreCollectionSchemaRequest(project, name, p.getJSONObject("body_json"))); break;
                 case "GetGraphStoreCollectionSchema": {
-                    GetGraphStoreCollectionSchemaResponse r = client.getGraphStoreCollectionSchema(new GetGraphStoreCollectionSchemaRequest(project, name, p.getLongValue("collection_schema_id")));
+                    GetGraphStoreCollectionSchemaResponse r = client.getGraphStoreCollectionSchema(new GetGraphStoreCollectionSchemaRequest(project, name, p.getString("collection_schema_name")));
                     response = r; body.put("projectId", r.getProjectId()); body.put("storeName", r.getStoreName());
                     body.put("collectionSchema", r.getCollectionSchema()); break;
                 }
@@ -127,9 +127,9 @@ public class GraphStoreManagementE2ETool {
                     if (r.getNextPageToken() != null && !r.getNextPageToken().isEmpty()) body.put("nextPageToken", r.getNextPageToken()); break;
                 }
                 case "UpdateGraphStoreCollectionSchema":
-                    response = client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest(project, name, p.getLongValue("collection_schema_id"), p.getJSONObject("body_json"))); break;
+                    response = client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest(project, name, p.getString("collection_schema_name"), p.getJSONObject("body_json"))); break;
                 case "DeleteGraphStoreCollectionSchema":
-                    response = client.deleteGraphStoreCollectionSchema(new DeleteGraphStoreCollectionSchemaRequest(project, name, p.getLongValue("collection_schema_id"))); break;
+                    response = client.deleteGraphStoreCollectionSchema(new DeleteGraphStoreCollectionSchemaRequest(project, name, p.getString("collection_schema_name"))); break;
                 default: throw new IllegalArgumentException("unsupported GraphStore operation");
             }
             output.put("http_status", 200); output.put("request_id", response.GetRequestId());
