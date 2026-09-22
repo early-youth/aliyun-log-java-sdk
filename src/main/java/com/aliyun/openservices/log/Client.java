@@ -6488,8 +6488,14 @@ public class Client implements LogService {
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
         CodingUtils.assertStringNotNullOrEmpty(request.getQuery(), "query");
+        if (request.getFrom() < 0 || request.getFrom() >= request.getTo() || request.getTo() > 0xffffffffL) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "GraphStore requires uint32 from < to", "");
+        }
         JSONObject query = new JSONObject();
         query.put("query", request.getQuery());
+        query.put("from", request.getFrom());
+        query.put("to", request.getTo());
+        if (request.getSession() != null) query.put("session", request.getSession());
         byte[] body = encodeToUtf8(query.toJSONString());
         Map<String, String> headers = GetCommonHeadPara(request.GetProject());
         headers.put(Consts.CONST_CONTENT_TYPE, Consts.CONST_SLS_JSON);
@@ -6582,7 +6588,23 @@ public class Client implements LogService {
         ResponseMessage response = sendJson(request);
         String requestId = GetRequestId(response.getHeaders());
         JSONObject value = graphStoreResponseBody(response, requestId);
-        return new GetGraphStoreResponse(response.getHeaders(), readGraphStore(value, requestId));
+        GraphStore graphStore = readGraphStore(value, requestId);
+        JSONArray items = graphStoreField(value, "shards", JSONArray.class, requestId);
+        if (items.size() != graphStore.getCurrentShardCount()) {
+            throw new LogException(ErrorCodes.BAD_RESPONSE, "GraphStore shard count mismatch", requestId);
+        }
+        List<GraphStoreShardInfo> shards = new ArrayList<GraphStoreShardInfo>(items.size());
+        for (Object item : items) {
+            if (!(item instanceof JSONObject)) {
+                throw new LogException(ErrorCodes.BAD_RESPONSE, "invalid GraphStore shard", requestId);
+            }
+            int id = graphStoreInt((JSONObject) item, "shardId", requestId);
+            if (!shards.isEmpty() && shards.get(shards.size() - 1).getShardId() >= id) {
+                throw new LogException(ErrorCodes.BAD_RESPONSE, "GraphStore shards must be ordered and unique", requestId);
+            }
+            shards.add(new GraphStoreShardInfo(id));
+        }
+        return new GetGraphStoreResponse(response.getHeaders(), graphStore, shards);
     }
 
     @Override

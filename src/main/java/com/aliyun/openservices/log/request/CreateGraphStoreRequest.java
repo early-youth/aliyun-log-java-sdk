@@ -7,13 +7,13 @@ import com.alibaba.fastjson.JSONObject;
 public class CreateGraphStoreRequest extends BasicRequest {
     private static final long serialVersionUID = 1L;
     private String storeName;
-    private int initialShardCount;
+    private int shardCount;
     private JSONObject baseSchema;
 
-    public CreateGraphStoreRequest(String project, String storeName, int initialShardCount, JSONObject baseSchema) {
+    public CreateGraphStoreRequest(String project, String storeName, int shardCount, JSONObject baseSchema) {
         super(project);
         this.storeName = storeName;
-        this.initialShardCount = initialShardCount;
+        this.shardCount = shardCount;
         this.baseSchema = baseSchema;
     }
 
@@ -25,12 +25,12 @@ public class CreateGraphStoreRequest extends BasicRequest {
         this.storeName = storeName;
     }
 
-    public int getInitialShardCount() {
-        return initialShardCount;
+    public int getShardCount() {
+        return shardCount;
     }
 
-    public void setInitialShardCount(int initialShardCount) {
-        this.initialShardCount = initialShardCount;
+    public void setShardCount(int shardCount) {
+        this.shardCount = shardCount;
     }
 
     public JSONObject getBaseSchema() {
@@ -55,7 +55,7 @@ public class CreateGraphStoreRequest extends BasicRequest {
     public Object getBody() {
         JSONObject body = new JSONObject();
         body.put("storeName", storeName);
-        body.put("initialShardCount", initialShardCount);
+        body.put("shardCount", shardCount);
         body.put("baseSchema", baseSchema);
         return body;
     }

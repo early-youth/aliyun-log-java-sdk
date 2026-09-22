@@ -37,11 +37,10 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class GraphStoreDataTest {
-    private static final String ROWS = "{\"header\":[\"a\",\"b\",\"c\"],"
-            + "\"data\":[[null,\"\",\"雪\\u0000\"],[\"9223372036854775808\",\"[1,2]\",\"true\"]],"
-            + "\"meta\":{\"rowCount\":2,\"elapsedMs\":-9223372036854775808,"
-            + "\"peakMemoryBytes\":9223372036854775807,\"resultBytes\":-1,\"truncated\":true,\"warnings\":[\"雪\"]}}";
-    private static final GetGraphStoreDataRequest QUERY = new GetGraphStoreDataRequest("project", "store", "MATCH (n) RETURN n");
+    private static final String ROWS = "{\"data\":{\"fields\":[\"a\",\"b\",\"c\"],"
+            + "\"values\":[[null,\"\",\"雪\\u0000\"],[\"9223372036854775808\",\"[1,2]\",\"true\"]]},"
+            + "\"meta\":{\"elapsedMs\":-9223372036854775808,\"truncated\":true,\"warnings\":[\"雪\"]}}";
+    private static final GetGraphStoreDataRequest QUERY = new GetGraphStoreDataRequest("project", "store", "MATCH (n) RETURN n", 10, 20);
 
     private static Logs.LogGroup group(byte[] value) {
         return Logs.LogGroup.newBuilder().addLogs(Logs.Log.newBuilder().setTime(1)
@@ -77,13 +76,18 @@ public class GraphStoreDataTest {
                         }
                     }
                     String query = "MATCH (n) WHERE n.x=\"雪\\\n\u0000\" RETURN n";
-                    GetGraphStoreDataResponse result = client.getGraphStoreData(new GetGraphStoreDataRequest("project", "store", query));
+                    GetGraphStoreDataRequest request = new GetGraphStoreDataRequest("project", "store", query, 0, 0xffffffffL);
+                    request.setSession("opaque\u0000雪");
+                    GetGraphStoreDataResponse result = client.getGraphStoreData(request);
                     wire.check("query", Consts.CONST_SLS_JSON, version, token);
                     assertEquals(String.valueOf(wire.body.length), wire.headers.get(Consts.CONST_X_SLS_BODYRAWSIZE));
                     assertEquals("lz4", wire.headers.get(Consts.CONST_ACCEPT_ENCODING));
                     JSONObject body = JSONObject.parseObject(new String(wire.body, StandardCharsets.UTF_8));
-                    assertEquals(1, body.size());
+                    assertEquals(4, body.size());
                     assertEquals(query, body.get("query"));
+                    assertEquals(0L, body.getLongValue("from"));
+                    assertEquals(0xffffffffL, body.getLongValue("to"));
+                    assertEquals("opaque\u0000雪", body.get("session"));
                     assertRows(result);
                 }
             }
@@ -99,14 +103,18 @@ public class GraphStoreDataTest {
             expect(ErrorCodes.INVALID_PARAMETER, () -> client.postGraphStoreData(new PostGraphStoreDataRequest("project", "store", null)));
             for (String name : new String[]{null, "", "../store", "store/next", "store?x", "雪"}) {
                 expect(ErrorCodes.INVALID_PARAMETER, () -> client.postGraphStoreData(new PostGraphStoreDataRequest("project", name, group(new byte[0]))));
-                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest("project", name, "q")));
+                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest("project", name, "q", 10, 20)));
             }
             for (String empty : new String[]{null, ""}) {
                 expect(ErrorCodes.INVALID_PARAMETER, () -> client.postGraphStoreData(new PostGraphStoreDataRequest(empty, "store", group(new byte[0]))));
-                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest(empty, "store", "q")));
-                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest("project", "store", empty)));
+                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest(empty, "store", "q", 10, 20)));
+                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest("project", "store", empty, 10, 20)));
             }
             Logs.LogGroup partial = Logs.LogGroup.newBuilder().addLogs(Logs.Log.newBuilder().buildPartial()).buildPartial();
+            for (long[] range : new long[][]{{0, 0}, {2, 1}, {-1, 1}, {0, 0x100000000L}, {0x100000000L, 0x100000001L}}) {
+                expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(
+                        new GetGraphStoreDataRequest("project", "store", "q", range[0], range[1])));
+            }
             expect(ErrorCodes.INVALID_PARAMETER, () -> client.postGraphStoreData(new PostGraphStoreDataRequest("project", "store", partial)));
             PostGraphStoreDataRequest request = new PostGraphStoreDataRequest("project", "store", group(new byte[256]));
             request.setCompressType(null);
@@ -136,8 +144,11 @@ public class GraphStoreDataTest {
     public void malformedRowsFailWithoutPartialResultsOrRetries() throws Exception {
         try (Wire wire = new Wire(new ClientConfiguration(), null)) {
             for (String bad : new String[]{"", "null", "[]", "{}", ROWS + "{}", ROWS + "\u0000tail",
-                    ROWS.replace("\"header\"", "header"), ROWS.replace('"', '\''), ROWS.replace("2,", "2,/*comment*/"),
-                    ROWS.replace("2,", "+2,"), ROWS.replace("2,", "02,"), ROWS.replace("2,", "2L,"),
+                    ROWS.replace("\"fields\"", "fields"), ROWS.replace('"', '\''),
+                    ROWS.replace(":true", ":true/*comment*/"),
+                    ROWS.replace(":-9223372036854775808", ":+2"),
+                    ROWS.replace(":-9223372036854775808", ":02"),
+                    ROWS.replace(":-9223372036854775808", ":2L"),
                     ROWS.replace("[\"a\",", "[\"a\",,"), ROWS.replace("[\"雪\"]", "[\"雪\",]"),
                     ROWS.replace("\"雪\\u0000\"", "\"bad\nstring\""),
                     ROWS.replace("\\u0000", "\\x00"), ROWS.replace("\\u0000", "\\u00xz"),
@@ -147,16 +158,18 @@ public class GraphStoreDataTest {
                     ROWS.replace("null,\"\"", "{},\"\""), ROWS.replace("null,\"\"", "[],\"\""),
                     ROWS.replace("[\"a\",", "[null,"), ROWS.replace("[\"雪\"]", "[null]"),
                     ROWS.replace("[\"雪\"]", "[1]"), ROWS.replace("true", "\"true\""),
-                    ROWS.replace("\"rowCount\":2", "\"rowCount\":-1"), ROWS.replace("\"rowCount\":2", "\"rowCount\":0"),
-                    ROWS.replace("9223372036854775807", "9223372036854775808"),
+                    ROWS.replace("\"elapsedMs\":", "\"rowCount\":2,\"elapsedMs\":"),
+                    ROWS.replace("-9223372036854775808", "9223372036854775808"),
                     ROWS.replace("-9223372036854775808", "-9223372036854775809"),
-                    ROWS.replace("\"rowCount\":2", "\"rowCount\":2.0"), ROWS.replace("\"resultBytes\":-1", "\"resultBytes\":\"-1\"")}) {
+                    ROWS.replace("-9223372036854775808", "2.0"), ROWS.replace("-9223372036854775808", "\"2\""),
+                    "{\"header\":[],\"data\":[],\"meta\":{}}"}) {
                 wire.bad(bad.getBytes(StandardCharsets.UTF_8));
             }
-            for (String field : new String[]{"header", "data", "meta", "rowCount", "elapsedMs", "peakMemoryBytes", "resultBytes", "truncated", "warnings"}) {
+            for (String field : new String[]{"data", "meta", "fields", "values", "elapsedMs", "truncated", "warnings"}) {
                 for (boolean missing : new boolean[]{true, false}) {
                     JSONObject value = JSONObject.parseObject(ROWS);
-                    JSONObject target = value.containsKey(field) ? value : value.getJSONObject("meta");
+                    JSONObject target = value.containsKey(field) ? value
+                            : value.getJSONObject("data").containsKey(field) ? value.getJSONObject("data") : value.getJSONObject("meta");
                     if (missing) target.remove(field); else target.put(field, null);
                     wire.bad(JSONObject.toJSONBytes(value, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
                 }
@@ -168,13 +181,13 @@ public class GraphStoreDataTest {
             Arrays.fill(brackets, ']');
             wire.bad((ROWS.substring(0, ROWS.length() - 1) + ",\"extra\":" + nested + new String(brackets) + "}")
                     .getBytes(StandardCharsets.UTF_8));
-            wire.responseBody = "{\"header\":[],\"data\":[],\"meta\":{\"rowCount\":0,\"elapsedMs\":0,\"peakMemoryBytes\":0,\"resultBytes\":0,\"truncated\":false,\"warnings\":[]}}".getBytes(StandardCharsets.UTF_8);
-            assertTrue(wire.client.getGraphStoreData(QUERY).getData().isEmpty());
+            wire.responseBody = "{\"data\":{\"fields\":[],\"values\":[]},\"meta\":{\"elapsedMs\":0,\"truncated\":false,\"warnings\":[]}}".getBytes(StandardCharsets.UTF_8);
+            assertTrue(wire.client.getGraphStoreData(QUERY).getData().getValues().isEmpty());
             char[] manyEscapes = new char[100000];
             Arrays.fill(manyEscapes, '\n');
             String cell = new String(manyEscapes);
             wire.responseBody = ROWS.replace("\"雪\\u0000\"", JSONObject.toJSONString(cell)).getBytes(StandardCharsets.UTF_8);
-            assertEquals(cell, wire.client.getGraphStoreData(QUERY).getData().get(0).get(2));
+            assertEquals(cell, wire.client.getGraphStoreData(QUERY).getData().getValues().get(0).get(2));
         }
     }
 
@@ -238,13 +251,10 @@ public class GraphStoreDataTest {
 
     private static void assertRows(GetGraphStoreDataResponse result) {
         assertEquals("request-id", result.GetRequestId());
-        assertEquals(Arrays.asList("a", "b", "c"), result.getHeader());
-        assertEquals(Arrays.asList(null, "", "雪\u0000"), result.getData().get(0));
-        assertEquals(Arrays.asList("9223372036854775808", "[1,2]", "true"), result.getData().get(1));
-        assertEquals(2, result.getMeta().getRowCount());
+        assertEquals(Arrays.asList("a", "b", "c"), result.getData().getFields());
+        assertEquals(Arrays.asList(null, "", "雪\u0000"), result.getData().getValues().get(0));
+        assertEquals(Arrays.asList("9223372036854775808", "[1,2]", "true"), result.getData().getValues().get(1));
         assertEquals(Long.MIN_VALUE, result.getMeta().getElapsedMs());
-        assertEquals(Long.MAX_VALUE, result.getMeta().getPeakMemoryBytes());
-        assertEquals(-1, result.getMeta().getResultBytes());
         assertTrue(result.getMeta().isTruncated());
         assertEquals(Arrays.asList("雪"), result.getMeta().getWarnings());
     }

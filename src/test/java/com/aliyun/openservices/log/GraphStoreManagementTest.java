@@ -27,6 +27,8 @@ public class GraphStoreManagementTest {
     private static final String STORE = "{\"projectId\":2147483647,\"storeName\":\"store\","
             + "\"state\":\"READY\",\"currentShardCount\":2}";
     private static final String SCHEMA = "{\"collectionSchemaId\":9223372036854775807,\"unknown\":\"雪\"}";
+    private static final String STORE_WITH_SHARDS = STORE.substring(0, STORE.length() - 1)
+            + ",\"shards\":[{\"shardId\":2},{\"shardId\":7}]}";
 
     @Test
     public void mutationsUseNativeRequestAndResponse() throws Exception {
@@ -38,7 +40,7 @@ public class GraphStoreManagementTest {
         JSONObject body = client.jsonBody();
         assertEquals(3, body.size());
         assertEquals("store", body.get("storeName"));
-        assertEquals(2, body.get("initialShardCount"));
+        assertEquals(2, body.get("shardCount"));
         assertTrue(body.get("baseSchema") instanceof JSONObject);
         assertEquals(Long.MAX_VALUE, body.getJSONObject("baseSchema").getLongValue("id"));
         assertEquals("雪", body.getJSONObject("baseSchema").get("unknown"));
@@ -72,12 +74,15 @@ public class GraphStoreManagementTest {
     @Test
     public void readsKeepIntegerPrecisionAndOpaqueSchemas() throws Exception {
         CapturingClient client = new CapturingClient();
-        client.responseBody = STORE;
+        client.responseBody = STORE_WITH_SHARDS;
         GetGraphStoreResponse store = client.getGraphStore(new GetGraphStoreRequest("project", "store"));
         client.check(HttpMethod.GET, "/graphstore/store");
         assertEquals(Integer.MAX_VALUE, store.getGraphStore().getProjectId());
         assertEquals(2, store.getGraphStore().getCurrentShardCount());
         assertEquals("READY", store.getGraphStore().getState());
+        assertEquals(2, store.getShards().size());
+        assertEquals(2, store.getShards().get(0).getShardId());
+        assertEquals(7, store.getShards().get(1).getShardId());
         assertEquals("request-id", store.GetRequestId());
 
         client.responseBody = "{\"stores\":[" + STORE + "],\"count\":1,\"total\":9223372036854775807}";
@@ -172,7 +177,7 @@ public class GraphStoreManagementTest {
                         ResponseMessage response = new ResponseMessage();
                         response.setStatusCode(200);
                         response.addHeader(Consts.CONST_X_SLS_REQUESTID, "signed-request");
-                        response.setContent(new ByteArrayInputStream(STORE.getBytes(StandardCharsets.UTF_8)));
+                        response.setContent(new ByteArrayInputStream(STORE_WITH_SHARDS.getBytes(StandardCharsets.UTF_8)));
                         return response;
                     }
                 };
@@ -211,6 +216,11 @@ public class GraphStoreManagementTest {
     @Test
     public void malformedResponsesFailWithoutCoercion() throws Exception {
         CapturingClient client = new CapturingClient();
+        for (String shards : new String[]{"null", "{}", "[null]", "[{}]", "[{\"shardId\":2147483648}]",
+                "[{\"shardId\":1},{\"shardId\":1}]", "[{\"shardId\":2},{\"shardId\":1}]", "[]"}) {
+            client.responseBody = STORE.substring(0, STORE.length() - 1) + ",\"shards\":" + shards + "}";
+            expectBadResponse(() -> client.getGraphStore(new GetGraphStoreRequest("project", "store")));
+        }
         for (String body : new String[]{"{}", "null", "[]", STORE + "{}", STORE + "\u0000tail",
                 STORE.replace("2147483647", "2147483648"), STORE.replace("2147483647", "1.0"),
                 STORE.replace("\"READY\"", "null")}) {

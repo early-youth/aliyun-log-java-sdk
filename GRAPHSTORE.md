@@ -14,7 +14,7 @@ ListGraphStoreCollectionSchemasResponse page = client.listGraphStoreCollectionSc
 ```
 
 Each of the 11 actions takes one BasicRequest subtype and returns its Response subtype.
-CreateGraphStoreRequest takes project, storeName, initialShardCount and a logical JSONObject.
+CreateGraphStoreRequest takes project, storeName, shardCount and a logical JSONObject.
 Collection Create/Update take a logical JSONObject; the SDK wraps it as value.
 Get/List retain opaque JSONObject schemas; storeId/collectionSchemaId are long.
 Nullable BigInteger splitHash supports the entire unsigned 64-bit range; null differs from zero.
@@ -39,8 +39,9 @@ PostGraphStoreDataRequest write = new PostGraphStoreDataRequest(project, storeNa
 write.setCompressType(Consts.CompressType.LZ4);
 PostGraphStoreDataResponse ack = client.postGraphStoreData(write);
 GetGraphStoreDataResponse rows = client.getGraphStoreData(
-    new GetGraphStoreDataRequest(project, storeName, "MATCH (n) RETURN n"));
-// rows.getHeader(), rows.getData(), rows.getMeta(), rows.GetRequestId().
+    new GetGraphStoreDataRequest(project, storeName, "MATCH (n) RETURN n", 1700000000L, 1700001000L));
+// Optional opaque session: request.setSession("opaque").
+// rows.getData().getFields(), rows.getData().getValues(), rows.getMeta(), rows.GetRequestId().
 // Each cell is String or null; complex graph values remain strings.
 ```
 
@@ -54,8 +55,10 @@ query uses SendData, including its transport retry budget. No GraphStore retry l
 An ACK does not imply query visibility or durability; timeout results may be unknown and
 retrying can duplicate delivery. The caller owns query convergence polling.
 
-Query sends only query JSON and returns string/null rows plus typed metadata (four signed long
-counters, truncated and warnings). Missing/null/mistyped fields, row count/width mismatches,
+GetGraphStore returns getShards() with ordered unique signed-int32 shardId; List keeps summary items.
+Query requires from/to long values in uint32 range, from < to, with [from,to) semantics.
+It returns data.fields/values plus meta (signed-long elapsedMs, truncated and warnings).
+Old header/rowCount/peakMemoryBytes/resultBytes are not accepted. Missing/null/mistyped fields, row width mismatches,
 invalid UTF-8/JSON or compressed responses fail as BadResponse with HTTP code/requestId,
 without partial rows or parser retries. Responses support uncompressed or LZ4 only, with a
 256 MiB raw-size check before allocation. The new response boundary restricts FastJSON's

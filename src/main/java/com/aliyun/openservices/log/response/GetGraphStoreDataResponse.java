@@ -32,41 +32,54 @@ public class GetGraphStoreDataResponse extends Response {
             "\"(?:[^\"\\\\\\x00-\\x1f]++|\\\\(?:[\"\\\\/bfnrt]|u[0-9a-fA-F]{4}))*+\""
             + "|-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?=[ \\t\\r\\n,}\\]]|$)"
             + "|true|false|null|[\\[\\]{},: \\t\\r\\n]");
-    private final List<String> header;
-    private final List<List<String>> data;
+    private final Data data;
     private final Meta meta;
 
-    private GetGraphStoreDataResponse(Map<String, String> headers, List<String> header,
-            List<List<String>> data, Meta meta) {
+    private GetGraphStoreDataResponse(Map<String, String> headers, Data data, Meta meta) {
         super(headers);
-        this.header = header;
         this.data = data;
         this.meta = meta;
     }
 
-    public List<String> getHeader() { return header; }
-    public List<List<String>> getData() { return data; }
+    public Data getData() { return data; }
     public Meta getMeta() { return meta; }
+
+    public static class Data implements Serializable {
+        private static final long serialVersionUID = 1L;
+        private final List<String> fields;
+        private final List<List<String>> values;
+
+        private Data(JSONObject value) {
+            if (value.size() != 2) throw new IllegalArgumentException("invalid GraphStore data fields");
+            fields = strings(field(value, "fields", JSONArray.class), false);
+            JSONArray rows = field(value, "values", JSONArray.class);
+            values = new ArrayList<List<String>>(rows.size());
+            for (Object row : rows) {
+                if (!(row instanceof JSONArray) || ((JSONArray) row).size() != fields.size()) {
+                    throw new IllegalArgumentException("invalid GraphStore row width");
+                }
+                values.add(strings((JSONArray) row, true));
+            }
+        }
+
+        public List<String> getFields() { return fields; }
+        public List<List<String>> getValues() { return values; }
+    }
 
     public static class Meta implements Serializable {
         private static final long serialVersionUID = 1L;
-        private final long rowCount, elapsedMs, peakMemoryBytes, resultBytes;
+        private final long elapsedMs;
         private final boolean truncated;
         private final List<String> warnings;
 
         private Meta(JSONObject value) {
-            rowCount = integer(value, "rowCount");
+            if (value.size() != 3) throw new IllegalArgumentException("invalid GraphStore meta fields");
             elapsedMs = integer(value, "elapsedMs");
-            peakMemoryBytes = integer(value, "peakMemoryBytes");
-            resultBytes = integer(value, "resultBytes");
             truncated = field(value, "truncated", Boolean.class);
             warnings = strings(field(value, "warnings", JSONArray.class), false);
         }
 
-        public long getRowCount() { return rowCount; }
         public long getElapsedMs() { return elapsedMs; }
-        public long getPeakMemoryBytes() { return peakMemoryBytes; }
-        public long getResultBytes() { return resultBytes; }
         public boolean isTruncated() { return truncated; }
         public List<String> getWarnings() { return warnings; }
     }
@@ -110,20 +123,10 @@ public class GetGraphStoreDataResponse extends Response {
                 throw new IllegalArgumentException("invalid GraphStore response object");
             }
             JSONObject value = (JSONObject) parsed;
-            List<String> header = strings(field(value, "header", JSONArray.class), false);
-            JSONArray rows = field(value, "data", JSONArray.class);
+            if (value.size() != 2) throw new IllegalArgumentException("invalid GraphStore response fields");
+            Data data = new Data(field(value, "data", JSONObject.class));
             Meta meta = new Meta(field(value, "meta", JSONObject.class));
-            if (meta.rowCount != rows.size()) {
-                throw new IllegalArgumentException("GraphStore rowCount mismatch");
-            }
-            List<List<String>> data = new ArrayList<List<String>>(rows.size());
-            for (Object row : rows) {
-                if (!(row instanceof JSONArray) || ((JSONArray) row).size() != header.size()) {
-                    throw new IllegalArgumentException("invalid GraphStore row width");
-                }
-                data.add(strings((JSONArray) row, true));
-            }
-            return new GetGraphStoreDataResponse(response.getHeaders(), header, data, meta);
+            return new GetGraphStoreDataResponse(response.getHeaders(), data, meta);
         } catch (RuntimeException | CharacterCodingException | StackOverflowError cause) {
             LogException error = new LogException(ErrorCodes.BAD_RESPONSE,
                     "invalid GraphStore query response", cause, response.getRequestId());

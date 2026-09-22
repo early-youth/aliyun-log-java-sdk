@@ -68,25 +68,28 @@ public class GraphStoreManagementE2ETool {
                     break;
                 }
                 case "GetGraphStoreData": {
-                    GetGraphStoreDataResponse r = client.getGraphStoreData(new GetGraphStoreDataRequest(project, name, p.getString("query")));
+                    if (!p.containsKey("from") || !p.containsKey("to")) throw new IllegalArgumentException("query requires from and to");
+                    GetGraphStoreDataRequest request = new GetGraphStoreDataRequest(project, name, p.getString("query"),
+                            p.getLongValue("from"), p.getLongValue("to"));
+                    request.setSession(p.getString("session"));
+                    GetGraphStoreDataResponse r = client.getGraphStoreData(request);
                     response = r;
-                    output.put("header", r.getHeader()); output.put("data", r.getData());
+                    output.put("header", r.getData().getFields()); output.put("data", r.getData().getValues());
                     JSONObject meta = new JSONObject(true);
-                    meta.put("row_count", r.getMeta().getRowCount()); meta.put("truncated", r.getMeta().isTruncated());
-                    meta.put("elapsed_ms", r.getMeta().getElapsedMs()); meta.put("peak_memory_bytes", r.getMeta().getPeakMemoryBytes());
-                    meta.put("result_bytes", r.getMeta().getResultBytes()); meta.put("warnings", r.getMeta().getWarnings());
+                    meta.put("row_count", r.getData().getValues().size()); meta.put("truncated", r.getMeta().isTruncated());
+                    meta.put("elapsed_ms", r.getMeta().getElapsedMs()); meta.put("warnings", r.getMeta().getWarnings());
                     output.put("meta", meta);
                     break;
                 }
                 case "CreateGraphStore": {
                     JSONObject value = p.getJSONObject("body_json");
                     response = client.createGraphStore(new CreateGraphStoreRequest(project, value.getString("storeName"),
-                        value.getIntValue("initialShardCount"), value.getJSONObject("baseSchema")));
+                        value.getIntValue("shardCount"), value.getJSONObject("baseSchema")));
                     break;
                 }
                 case "GetGraphStore": {
                     GetGraphStoreResponse r = client.getGraphStore(new GetGraphStoreRequest(project, name));
-                    response = r; body = store(r.getGraphStore()); break;
+                    response = r; body = store(r.getGraphStore()); body.put("shards", r.getShards()); break;
                 }
                 case "ListGraphStores": {
                     ListGraphStoresRequest request = new ListGraphStoresRequest(project);
