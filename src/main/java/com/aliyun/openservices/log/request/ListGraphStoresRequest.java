@@ -1,14 +1,10 @@
 package com.aliyun.openservices.log.request;
 
 import com.aliyun.openservices.log.http.client.HttpMethod;
-import java.util.HashMap;
-import java.util.Map;
 
 /** Request for the ListGraphStores management API. Schemas are logical JSON objects. */
 public class ListGraphStoresRequest extends BasicRequest {
     private static final long serialVersionUID = 1L;
-    private Integer offset;
-    private Integer size;
 
     public ListGraphStoresRequest(String project) {
         super(project);
@@ -16,19 +12,21 @@ public class ListGraphStoresRequest extends BasicRequest {
     }
 
     public Integer getOffset() {
-        return offset;
+        return GetParam("offset").isEmpty() ? null : Integer.valueOf(GetParam("offset"));
     }
 
     public void setOffset(Integer offset) {
-        this.offset = offset;
+        if (offset == null) GetAllParams().remove("offset");
+        else SetParam("offset", offset.toString());
     }
 
     public Integer getSize() {
-        return size;
+        return GetParam("size").isEmpty() ? null : Integer.valueOf(GetParam("size"));
     }
 
     public void setSize(Integer size) {
-        this.size = size;
+        if (size == null) GetAllParams().remove("size");
+        else SetParam("size", size.toString());
     }
 
     @Override
@@ -41,19 +39,4 @@ public class ListGraphStoresRequest extends BasicRequest {
         return "/graphstore";
     }
 
-    @Override
-    public Map<String, String> GetAllParams() {
-        Map<String, String> parameters = new HashMap<String, String>(super.GetAllParams());
-        if (offset == null) {
-            parameters.remove("offset");
-        } else {
-            parameters.put("offset", offset.toString());
-        }
-        if (size == null) {
-            parameters.remove("size");
-        } else {
-            parameters.put("size", size.toString());
-        }
-        return parameters;
-    }
 }

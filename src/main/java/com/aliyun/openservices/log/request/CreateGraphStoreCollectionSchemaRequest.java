@@ -2,17 +2,19 @@ package com.aliyun.openservices.log.request;
 
 import com.aliyun.openservices.log.http.client.HttpMethod;
 import com.alibaba.fastjson.JSONObject;
+import com.aliyun.openservices.log.common.GraphStoreCollectionSchema;
+import com.aliyun.openservices.log.internal.GraphStoreSchemaCodec;
 
-/** Request for the CreateGraphStoreCollectionSchema management API. Schemas are logical JSON objects. */
+/** Request for the CreateGraphStoreCollectionSchema management API. Schemas use concrete logical models. */
 public class CreateGraphStoreCollectionSchemaRequest extends BasicRequest {
     private static final long serialVersionUID = 1L;
     private String storeName;
-    private JSONObject value;
+    private GraphStoreCollectionSchema collectionSchema;
 
-    public CreateGraphStoreCollectionSchemaRequest(String project, String storeName, JSONObject value) {
+    public CreateGraphStoreCollectionSchemaRequest(String project, String storeName, GraphStoreCollectionSchema collectionSchema) {
         super(project);
         this.storeName = storeName;
-        this.value = value;
+        this.collectionSchema = collectionSchema;
     }
 
     public String getStoreName() {
@@ -23,12 +25,12 @@ public class CreateGraphStoreCollectionSchemaRequest extends BasicRequest {
         this.storeName = storeName;
     }
 
-    public JSONObject getValue() {
-        return value;
+    public GraphStoreCollectionSchema getCollectionSchema() {
+        return collectionSchema;
     }
 
-    public void setValue(JSONObject value) {
-        this.value = value;
+    public void setCollectionSchema(GraphStoreCollectionSchema collectionSchema) {
+        this.collectionSchema = collectionSchema;
     }
 
     @Override
@@ -44,7 +46,7 @@ public class CreateGraphStoreCollectionSchemaRequest extends BasicRequest {
     @Override
     public Object getBody() {
         JSONObject body = new JSONObject();
-        body.put("value", value);
+        body.put("value", GraphStoreSchemaCodec.encode(collectionSchema));
         return body;
     }
 }

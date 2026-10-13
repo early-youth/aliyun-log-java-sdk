@@ -5,22 +5,26 @@ public class GetGraphStoreDataRequest extends Request {
     private static final long serialVersionUID = 1L;
     private final String storeName;
     private final String query;
-    private final long from;
-    private final long to;
+    private final long start;
+    private final long end;
     private String session;
 
-    public GetGraphStoreDataRequest(String project, String storeName, String query, long from, long to) {
+    public GetGraphStoreDataRequest(String project, String storeName, String query) {
+        this(project, storeName, query, 0, 0xffffffffL);
+    }
+
+    public GetGraphStoreDataRequest(String project, String storeName, String query, long start, long end) {
         super(project);
         this.storeName = storeName;
         this.query = query;
-        this.from = from;
-        this.to = to;
+        this.start = start;
+        this.end = end;
     }
 
     public String getStoreName() { return storeName; }
     public String getQuery() { return query; }
-    public long getFrom() { return from; }
-    public long getTo() { return to; }
+    public long getStart() { return start; }
+    public long getEnd() { return end; }
     public String getSession() { return session; }
     public void setSession(String session) { this.session = session; }
 }

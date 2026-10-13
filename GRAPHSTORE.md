@@ -1,77 +1,130 @@
 # GraphStore SDK (Java 8)
 
-Use the existing LogService/Client and request/response packages.
+Use the existing `LogService/Client` with `common`, `request` and `response` models.
+The following method accepts an existing client and throws the native LogException:
 
 ```java
-GetGraphStoreResponse store = client.getGraphStore(new GetGraphStoreRequest(project, storeName));
-GetGraphStoreBaseSchemaResponse base =
-    client.getGraphStoreBaseSchema(new GetGraphStoreBaseSchemaRequest(project, storeName));
-ListGraphStoreCollectionSchemasRequest request =
-    new ListGraphStoreCollectionSchemasRequest(project, storeName);
-request.setPageSize(100);
-ListGraphStoreCollectionSchemasResponse page = client.listGraphStoreCollectionSchemas(request);
-// For another page, explicitly set request.setPageToken(page.getNextPageToken()).
+import com.aliyun.openservices.log.LogService;
+import com.aliyun.openservices.log.common.*;
+import com.aliyun.openservices.log.request.*;
+import com.aliyun.openservices.log.response.*;
+import com.aliyun.openservices.log.exception.LogException;
+import java.util.Arrays;
+import java.util.Collections;
+
+static void configureGraphStore(LogService client, String project, String store) throws LogException {
+    GraphStoreFullTextIndex fullText = new GraphStoreFullTextIndex(" ,", false, false);
+    GraphStoreBaseSchema base = new GraphStoreBaseSchema(false, 86400L, true,
+        new GraphStoreVertexLayout("vl", "vid"),
+        new GraphStoreEdgeLayout(new GraphStoreEndpoint("sl", "sid"), "el", new GraphStoreEndpoint("tl", "tid")));
+    base.setFullTextIndex(fullText);
+    client.createGraphStore(new CreateGraphStoreRequest(project, store, 2, base));
+    GraphStoreIndexConfig full = new GraphStoreIndexConfig(true);
+    full.setFullTextIndex(fullText);
+    GraphStoreIndexConfig range = new GraphStoreIndexConfig(true);
+    range.setRangeIndex(new GraphStoreRangeIndex());
+    java.util.List<GraphStoreFieldSchema> fields = Arrays.asList(
+        new GraphStoreFieldSchema("text", GraphStoreFieldType.STRING, full),
+        new GraphStoreFieldSchema("count", GraphStoreFieldType.INT, range),
+        new GraphStoreFieldSchema("exact", GraphStoreFieldType.BOOL, new GraphStoreIndexConfig(true)));
+    client.createGraphStoreCollectionSchema(new CreateGraphStoreCollectionSchemaRequest(project, store,
+        new GraphStoreCollectionSchema("vertices", "example", GraphStoreLayoutType.VERTEX,
+            Arrays.asList(new GraphStoreCollectionKeyValue("vl", "person")), fields)));
+    client.createGraphStoreCollectionSchema(new CreateGraphStoreCollectionSchemaRequest(project, store,
+        new GraphStoreCollectionSchema("edges", "example", GraphStoreLayoutType.EDGE,
+            Arrays.asList(new GraphStoreCollectionKeyValue("sl", "person"),
+                new GraphStoreCollectionKeyValue("el", "knows"), new GraphStoreCollectionKeyValue("tl", "person")), fields)));
+    // Null TTL restores inheritance; the empty array replaces the property list.
+    client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest(project, store, "vertices",
+        new GraphStoreCollectionSchemaUpdate("vertices", "updated", Collections.<GraphStoreFieldSchema>emptyList())));
+    GraphStoreBaseSchema read = client.getGraphStoreBaseSchema(new GetGraphStoreBaseSchemaRequest(project, store)).getBaseSchema();
+    String vertexIdField = read.getVertexLayout().getId();
+    ListGraphStoreCollectionSchemasRequest request = new ListGraphStoreCollectionSchemasRequest(project, store);
+    request.setPageSize(100);
+    ListGraphStoreCollectionSchemasResponse page = client.listGraphStoreCollectionSchemas(request);
+    for (GraphStoreCollectionSchema schema : page.getCollectionSchemas()) { schema.getFields(); }
+    // Explicitly set request.setPageToken(page.getNextPageToken()) to request another page.
+}
 ```
 
-Each of the 11 actions takes one BasicRequest subtype and returns its Response subtype.
-CreateGraphStoreRequest takes project, storeName, shardCount and a logical JSONObject.
-Collection Create/Update take a logical JSONObject; the SDK wraps it as value.
-Get/Update/Delete request constructors take a String collectionSchemaName, never a numeric ID.
-Get/List retain opaque JSONObject schemas, require name and do not add an ID; storeId stays long.
-Update value.name must equal the path name; the service enforces immutable name/layout/keys.
-Pagination uses raw last-name tokens in byte order (default 100/max 1000); SDK tokens remain opaque.
-The service owns configurable name validation (default lowercase/digits/interior '-'/'_', 2..63)
-and the 10240 logical-schema create quota. SDK path validation only rejects unsafe segments.
-Nullable BigInteger splitHash supports the entire unsigned 64-bit range; null differs from zero.
-Nullable Integer offset/size/pageSize omit the corresponding parameter.
+## Logical schema contract
 
-Response.GetRequestId() and LogException preserve native metadata. The existing network retry
-budget is unchanged; no GraphStore retry, polling or automatic pagination is added.
-Timeouts may leave mutation results unknown.
-For V4 on this baseline, set ClientConfiguration's signature version and region before constructing
-Client; Client.setSignatureVersion/setRegion do not rebuild an already-created signer.
+All schema inputs and Get/List results are concrete models. This changes source compatibility:
+remove raw JSON arguments and migrate custom SDK interface implementations. There is no raw
+compatibility overload. HTTP still uses `baseSchema`, `value`, `collectionSchema` and
+`collectionSchemas`; BaseSchema's two typed layouts encode as `graphLayouts:[vertex,edge]`.
 
-Compatibility: LogService adds 13 abstract methods (11 management, write and query). Third-party implementations must implement
-them. No alternative interface or adapter is added. Maven coordinates/version stay at the source
-baseline (com.aliyun.openservices:aliyun-log:0.6.164); no public release is implied.
-Console integration is outside this change.
+| Model | Fields and meaning |
+| --- | --- |
+| BaseSchema | Required timeStateEnable, nonnegative int64 ttlSeconds, indexEnable, vertexLayout and edgeLayout; commonFieldNames defaults to []; optional fullTextIndex. |
+| VertexLayout | Fixed read-only name vertex; required label/id **field names**. Optional ck/pk/routeKey and keyIndexConfigs. |
+| EdgeLayout | Fixed read-only name edge; required source/target Endpoint and label field name; the same optional keys/index map. |
+| Endpoint | Required nonempty label/id field names. |
+| CollectionSchema | Required nonempty name/description, graphLayout (vertex/edge), collectionKeyValues and fields arrays. Optional int64 ttlSeconds. |
+| CollectionSchemaUpdate | Required name/description and complete replacement fields array; optional ttlSeconds. No layout or CK mutation fields. |
+| CollectionKeyValue | Required nonempty name and string value; value may be empty. These are logical constants, not arbitrary binary PB values. |
+| FieldSchema | Required nonempty name, type (STRING/INT/DOUBLE/BOOL) and IndexConfig. INT is signed int64. |
+| IndexConfig | Required enable; optional FullTextIndex or empty RangeIndex. Enabled with neither selects Exact. |
+| FullTextIndex | Required nonempty token string, caseSensitive and chn; optional nonempty optionToken string. |
+
+Base TTL 0 disables expiry. Collection TTL unset/null inherits BaseSchema; 0 disables expiry;
+positive values override in seconds. Update is replacement: unset/null TTL restores inheritance.
+Required `fields` and `collectionKeyValues` arrays may be empty. Optional keys are omitted when
+unset; explicit empty lists remain empty lists. Vertex defaults are ck=[label], pk=[id],
+routeKey=[label]; Edge defaults are ck=[source.label,label,target.label],
+pk=[source.id,target.id], routeKey=[source.label]. Defaults, valid key projections, index
+combinations, token rules, physical IDs/roles/versions and logical-to-physical compilation belong
+to the service. The SDK checks required values, empty elements, basic ranges and Update name equality.
+Unknown schema fields/enums, wrong known-field types and integer overflow return a parameter or
+BadResponse error instead of silently discarding configuration; upgrade the SDK to support new schema fields.
+
+Collection Get/Update/Delete take a string name. Names and pagination tokens remain opaque;
+SDK path checks allow safe ASCII characters (including `.`/`@` for collections) and reject `.`/`..`.
+The service owns configurable naming limits, the 1000 collection create quota and the 1 MiB
+normalized CollectionSchema JSON array cap (BaseSchema excluded).
+
+Models are Java 8 beans with constructors/getters/setters. Required Boolean/Long values use
+boxed types so missing values can be rejected; optional fields use null. Create/Update expose
+getCollectionSchema/setCollectionSchema; HTTP still wraps them under value. Shared model
+objects expand as JSON values without $ref. No arbitrary JSONObject schema input remains.
+
+Store IDs remain long; nullable BigInteger splitHash covers uint64 and distinguishes zero.
+Offset/size/pageSize and opaque pageToken share Request's parameter table with SetParam/GetParam.
+Typed null setters remove parameters; missing/null nextPageToken means no next page.
+GetGraphStore does not recheck shard count, order or uniqueness. Management IDs/counts and Schema
+integers reject overflow rather than using truncating getters. BadResponse errors retain the
+actual HTTP code, requestId and cause. Native transport/network retry budgets remain unchanged.
+For V4, set ClientConfiguration signature version and region before constructing Client.
 
 ## Write and query
 
 ```java
 PostGraphStoreDataRequest write = new PostGraphStoreDataRequest(project, storeName, logGroup);
-// logGroup is the existing Logs.LogGroup; use protobuf ByteString for exact binary values.
 write.setCompressType(Consts.CompressType.LZ4);
 PostGraphStoreDataResponse ack = client.postGraphStoreData(write);
 GetGraphStoreDataResponse rows = client.getGraphStoreData(
     new GetGraphStoreDataRequest(project, storeName, "MATCH (n) RETURN n", 1700000000L, 1700001000L));
-// Optional opaque session: request.setSession("opaque").
-// rows.getData().getFields(), rows.getData().getValues(), rows.getMeta(), rows.GetRequestId().
-// Each cell is String or null; complex graph values remain strings.
+// rows.getData().getFields(), getValues(), rows.getMeta(), rows.GetRequestId().
 ```
 
-The requests extend the existing Request. Write returns a normal Response with headers/requestId,
-not a byte-count field. LZ4 is the default; NONE, ZSTD and GZIP (wire name deflate) are the
-existing LogStore algorithms. Null compression is invalid. Valid empty groups are still sent.
-The standard PB is serialized once and checked by the existing checkBodyRawSize before
-compression; neither existing size thresholds nor validation order is changed.
-Write uses sendLogBytes/SendData, including native direct-mode/network retries and retryDisabled;
-query uses SendData, including its transport retry budget. No GraphStore retry loop is added.
-An ACK does not imply query visibility or durability; timeout results may be unknown and
-retrying can duplicate delivery. The caller owns query convergence polling.
+Standard LogGroup serialization, exact bytes, checkBodyRawSize and native NONE/LZ4/ZSTD/GZIP
+(wire deflate) are preserved. LZ4 defaults; null compression is invalid; valid empty groups
+are sent. Writes use sendLogBytes/SendData, queries use SendData; retryDisabled and network
+budgets are unchanged. Query start/end are long with closed [start,end], 0 <= start <= end;
+the three-argument constructor defaults to [0,4294967295]. Session is optional and opaque.
 
-GetGraphStore returns getShards() with ordered unique signed-int32 shardId; List keeps summary items.
-Query requires from/to long values in uint32 range, from < to, with [from,to) semantics.
-It returns data.fields/values plus meta (signed-long elapsedMs, truncated and warnings).
-Old header/rowCount/peakMemoryBytes/resultBytes are not accepted. Missing/null/mistyped fields, row width mismatches,
-invalid UTF-8/JSON or compressed responses fail as BadResponse with HTTP code/requestId,
-without partial rows or parser retries. Responses support uncompressed or LZ4 only, with a
-256 MiB raw-size check before allocation. The new response boundary restricts FastJSON's
-permissive syntax locally; management and global parser/transport settings are unchanged.
+Query performs ordinary UTF-8 conversion and one FastJSON parse with DisableSpecialKeyDetect.
+Additional result fields and unequal row widths are accepted. Required data/meta structures
+remain required; cells/elapsedMs/truncated use native FastJSON getters, as LogStore does.
+No private lexer, JSONValidator, strict UTF-8 scan or additional integer conversion policy is
+used for query values. Responses support uncompressed/LZ4 via LZ4Encoder; raw size must fit
+nonnegative int, with no GraphStore 256 MiB cap or extra compressed-input consumption check.
+Real decode/decompression errors, including checked LogException from LZ4Encoder, become
+BadResponse with HTTP/requestId/cause, without parser retries or partial rows.
 
-Run the hermetic unit tests using Maven's -Dtest selector, then mvn -DskipTests package.
-Unrestricted mvn test also includes online function tests and requires their environment.
-GraphStoreManagementE2ETool in the existing functiontest tree runs one native management SDK operation for
-the GraphStore E2E Runner. It reads credentials only from GRAPHSTORE_E2E_ACCESS_KEY_ID/
-GRAPHSTORE_E2E_ACCESS_KEY_SECRET. The Runner owns the lifecycle, assertions and cleanup.
-It exposes all 13 management, write and query operations through the same Runner.
+ACK does not promise visibility/durability; timeouts may leave mutation results unknown and
+retries may duplicate delivery. Callers own convergence polling. All 13 GraphStore methods
+stay on LogService; custom implementations must migrate. Each repository retains its own
+Maven coordinates/dependencies/version; no release is implied. Run native SDK tests with a
+hermetic selector and exclude functiontest sources from test compilation, then package with
+-Dmaven.test.skip=true. E2E tools are outside this refinement and need separate migration.

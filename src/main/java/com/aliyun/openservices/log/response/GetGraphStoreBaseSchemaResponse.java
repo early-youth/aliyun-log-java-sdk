@@ -1,16 +1,16 @@
 package com.aliyun.openservices.log.response;
 
 import java.util.Map;
-import com.alibaba.fastjson.JSONObject;
+import com.aliyun.openservices.log.common.GraphStoreBaseSchema;
 
 public class GetGraphStoreBaseSchemaResponse extends Response {
     private static final long serialVersionUID = 1L;
     private final int projectId;
     private final String storeName;
     private final long storeId;
-    private final JSONObject baseSchema;
+    private final GraphStoreBaseSchema baseSchema;
 
-    public GetGraphStoreBaseSchemaResponse(Map<String, String> headers, int projectId, String storeName, long storeId, JSONObject baseSchema) {
+    public GetGraphStoreBaseSchemaResponse(Map<String, String> headers, int projectId, String storeName, long storeId, GraphStoreBaseSchema baseSchema) {
         super(headers);
         this.projectId = projectId;
         this.storeName = storeName;
@@ -30,7 +30,7 @@ public class GetGraphStoreBaseSchemaResponse extends Response {
         return storeId;
     }
 
-    public JSONObject getBaseSchema() {
+    public GraphStoreBaseSchema getBaseSchema() {
         return baseSchema;
     }
 }

@@ -3,35 +3,22 @@ package com.aliyun.openservices.log.response;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.JSONValidator;
 import com.alibaba.fastjson.parser.Feature;
 import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.internal.ErrorCodes;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.http.comm.ResponseMessage;
-import net.jpountz.lz4.LZ4Factory;
+import com.aliyun.openservices.log.util.LZ4Encoder;
 
 import java.io.Serializable;
-import java.math.BigInteger;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-/** Public row response: each cell is a string or null, without numeric coercion. */
+/** Public row response; cells use the same FastJSON string conversion as LogStore queries. */
 public class GetGraphStoreDataResponse extends Response {
     private static final long serialVersionUID = 1L;
-    // JSONValidator checks structure but accepts non-JSON numbers, escapes and control characters.
-    // Possessive string repetition keeps long/escape-heavy cells off the regex recursion stack.
-    private static final Pattern JSON_TOKEN = Pattern.compile(
-            "\"(?:[^\"\\\\\\x00-\\x1f]++|\\\\(?:[\"\\\\/bfnrt]|u[0-9a-fA-F]{4}))*+\""
-            + "|-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?=[ \\t\\r\\n,}\\]]|$)"
-            + "|true|false|null|[\\[\\]{},: \\t\\r\\n]");
     private final Data data;
     private final Meta meta;
 
@@ -50,16 +37,10 @@ public class GetGraphStoreDataResponse extends Response {
         private final List<List<String>> values;
 
         private Data(JSONObject value) {
-            if (value.size() != 2) throw new IllegalArgumentException("invalid GraphStore data fields");
-            fields = strings(field(value, "fields", JSONArray.class), false);
+            fields = strings(field(value, "fields", JSONArray.class));
             JSONArray rows = field(value, "values", JSONArray.class);
             values = new ArrayList<List<String>>(rows.size());
-            for (Object row : rows) {
-                if (!(row instanceof JSONArray) || ((JSONArray) row).size() != fields.size()) {
-                    throw new IllegalArgumentException("invalid GraphStore row width");
-                }
-                values.add(strings((JSONArray) row, true));
-            }
+            for (int i = 0; i < rows.size(); i++) values.add(strings(rows.getJSONArray(i)));
         }
 
         public List<String> getFields() { return fields; }
@@ -73,10 +54,9 @@ public class GetGraphStoreDataResponse extends Response {
         private final List<String> warnings;
 
         private Meta(JSONObject value) {
-            if (value.size() != 3) throw new IllegalArgumentException("invalid GraphStore meta fields");
-            elapsedMs = integer(value, "elapsedMs");
-            truncated = field(value, "truncated", Boolean.class);
-            warnings = strings(field(value, "warnings", JSONArray.class), false);
+            elapsedMs = required(value.getLong("elapsedMs"), "elapsedMs");
+            truncated = required(value.getBoolean("truncated"), "truncated");
+            warnings = strings(field(value, "warnings", JSONArray.class));
         }
 
         public long getElapsedMs() { return elapsedMs; }
@@ -89,45 +69,17 @@ public class GetGraphStoreDataResponse extends Response {
             byte[] body = response.GetRawBody();
             String compression = response.getHeaders().get(Consts.CONST_X_SLS_COMPRESSTYPE);
             if (compression != null && !compression.isEmpty()) {
-                if (!"lz4".equals(compression)) {
-                    throw new IllegalArgumentException("unsupported GraphStore response compression");
-                }
-                long rawSize = Long.parseLong(response.getHeaders().get(Consts.CONST_X_SLS_BODYRAWSIZE));
-                if (rawSize < 0 || rawSize > 256 * 1024 * 1024) {
-                    throw new IllegalArgumentException("invalid GraphStore response raw size");
-                }
-                byte[] decoded = new byte[(int) rawSize];
-                int consumed = LZ4Factory.fastestInstance().fastDecompressor()
-                        .decompress(body, 0, decoded, 0, decoded.length);
-                if (consumed != body.length) {
-                    throw new IllegalArgumentException("invalid GraphStore LZ4 response length");
-                }
-                body = decoded;
+                if (!"lz4".equals(compression)) throw new IllegalArgumentException("unsupported GraphStore response compression");
+                int rawSize = Integer.parseInt(response.getHeaders().get(Consts.CONST_X_SLS_BODYRAWSIZE));
+                if (rawSize < 0) throw new IllegalArgumentException("negative GraphStore response raw size");
+                body = LZ4Encoder.decompressFromLhLz4Chunk(body, rawSize);
             }
-            String json = StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(body)).toString();
-            // FastJSON's default parser accepts extensions; the public wire contract is strict JSON.
-            Matcher tokens = JSON_TOKEN.matcher(json);
-            for (int offset = 0; offset < json.length(); offset = tokens.end()) {
-                if (!tokens.region(offset, json.length()).lookingAt()) {
-                    throw new IllegalArgumentException("invalid GraphStore JSON token");
-                }
-            }
-            if (!JSONValidator.from(json).setSupportMultiValue(false).validate()) {
-                throw new IllegalArgumentException("invalid GraphStore JSON response");
-            }
-            Object parsed = JSON.parse(json, Feature.DisableSpecialKeyDetect.mask);
-            if (!(parsed instanceof JSONObject)) {
-                throw new IllegalArgumentException("invalid GraphStore response object");
-            }
+            Object parsed = JSON.parse(new String(body, StandardCharsets.UTF_8), Feature.DisableSpecialKeyDetect);
+            if (!(parsed instanceof JSONObject)) throw new IllegalArgumentException("invalid GraphStore response object");
             JSONObject value = (JSONObject) parsed;
-            if (value.size() != 2) throw new IllegalArgumentException("invalid GraphStore response fields");
-            Data data = new Data(field(value, "data", JSONObject.class));
-            Meta meta = new Meta(field(value, "meta", JSONObject.class));
-            return new GetGraphStoreDataResponse(response.getHeaders(), data, meta);
-        } catch (RuntimeException | CharacterCodingException | StackOverflowError cause) {
+            return new GetGraphStoreDataResponse(response.getHeaders(),
+                    new Data(field(value, "data", JSONObject.class)), new Meta(field(value, "meta", JSONObject.class)));
+        } catch (LogException | RuntimeException | StackOverflowError cause) {
             LogException error = new LogException(ErrorCodes.BAD_RESPONSE,
                     "invalid GraphStore query response", cause, response.getRequestId());
             error.setHttpCode(response.getStatusCode());
@@ -135,31 +87,20 @@ public class GetGraphStoreDataResponse extends Response {
         }
     }
 
+    private static <T> T required(T value, String name) {
+        if (value == null) throw new IllegalArgumentException("missing GraphStore field " + name);
+        return value;
+    }
+
     private static <T> T field(JSONObject value, String name, Class<T> type) {
         Object field = value.get(name);
-        if (!type.isInstance(field)) {
-            throw new IllegalArgumentException("invalid GraphStore field: " + name);
-        }
+        if (!type.isInstance(field)) throw new IllegalArgumentException("invalid GraphStore field " + name);
         return type.cast(field);
     }
 
-    private static long integer(JSONObject value, String name) {
-        Object number = value.get(name);
-        if (!(number instanceof Integer || number instanceof Long
-                || number instanceof BigInteger && ((BigInteger) number).bitLength() <= 63)) {
-            throw new IllegalArgumentException("invalid GraphStore int64: " + name);
-        }
-        return ((Number) number).longValue();
-    }
-
-    private static List<String> strings(JSONArray array, boolean nullable) {
+    private static List<String> strings(JSONArray array) {
         List<String> result = new ArrayList<String>(array.size());
-        for (Object item : array) {
-            if (!(item instanceof String) && !(nullable && item == null)) {
-                throw new IllegalArgumentException("invalid GraphStore string cell");
-            }
-            result.add((String) item);
-        }
+        for (int i = 0; i < array.size(); i++) result.add(array.getString(i));
         return result;
     }
 }

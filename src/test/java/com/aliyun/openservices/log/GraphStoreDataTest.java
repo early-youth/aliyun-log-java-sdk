@@ -85,11 +85,30 @@ public class GraphStoreDataTest {
                     JSONObject body = JSONObject.parseObject(new String(wire.body, StandardCharsets.UTF_8));
                     assertEquals(4, body.size());
                     assertEquals(query, body.get("query"));
-                    assertEquals(0L, body.getLongValue("from"));
-                    assertEquals(0xffffffffL, body.getLongValue("to"));
+                    assertEquals(0L, body.getLongValue("start"));
+                    assertEquals(0xffffffffL, body.getLongValue("end"));
                     assertEquals("opaque\u0000雪", body.get("session"));
                     assertRows(result);
                 }
+            }
+        }
+    }
+
+    @Test
+    public void closedInt64TimeRangeAndDefaultsAreSentExactly() throws Exception {
+        try (Wire wire = new Wire(new ClientConfiguration(), null)) {
+            for (GetGraphStoreDataRequest request : new GetGraphStoreDataRequest[]{
+                    new GetGraphStoreDataRequest("project", "store", "q"),
+                    new GetGraphStoreDataRequest("project", "store", "q", 0, 0),
+                    new GetGraphStoreDataRequest("project", "store", "q", 4294967296L, Long.MAX_VALUE)}) {
+                wire.client.getGraphStoreData(request);
+                JSONObject body = JSONObject.parseObject(new String(wire.body, StandardCharsets.UTF_8));
+                assertEquals(3, body.size());
+                assertEquals(request.getStart(), body.getLongValue("start"));
+                assertEquals(request.getEnd(), body.getLongValue("end"));
+                assertFalse(body.containsKey("from"));
+                assertFalse(body.containsKey("to"));
+                assertFalse(body.containsKey("session"));
             }
         }
     }
@@ -111,7 +130,7 @@ public class GraphStoreDataTest {
                 expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest("project", "store", empty, 10, 20)));
             }
             Logs.LogGroup partial = Logs.LogGroup.newBuilder().addLogs(Logs.Log.newBuilder().buildPartial()).buildPartial();
-            for (long[] range : new long[][]{{0, 0}, {2, 1}, {-1, 1}, {0, 0x100000000L}, {0x100000000L, 0x100000001L}}) {
+            for (long[] range : new long[][]{{2, 1}, {-1, 1}, {0, -1}}) {
                 expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(
                         new GetGraphStoreDataRequest("project", "store", "q", range[0], range[1])));
             }
@@ -144,24 +163,7 @@ public class GraphStoreDataTest {
     public void malformedRowsFailWithoutPartialResultsOrRetries() throws Exception {
         try (Wire wire = new Wire(new ClientConfiguration(), null)) {
             for (String bad : new String[]{"", "null", "[]", "{}", ROWS + "{}", ROWS + "\u0000tail",
-                    ROWS.replace("\"fields\"", "fields"), ROWS.replace('"', '\''),
-                    ROWS.replace(":true", ":true/*comment*/"),
-                    ROWS.replace(":-9223372036854775808", ":+2"),
-                    ROWS.replace(":-9223372036854775808", ":02"),
-                    ROWS.replace(":-9223372036854775808", ":2L"),
-                    ROWS.replace("[\"a\",", "[\"a\",,"), ROWS.replace("[\"雪\"]", "[\"雪\",]"),
-                    ROWS.replace("\"雪\\u0000\"", "\"bad\nstring\""),
-                    ROWS.replace("\\u0000", "\\x00"), ROWS.replace("\\u0000", "\\u00xz"),
-                    ROWS.replace("[null,\"\",\"雪\\u0000\"]", "null"),
-                    ROWS.replace("[null,\"\",\"雪\\u0000\"]", "[]"),
-                    ROWS.replace("null,\"\"", "false,\"\""), ROWS.replace("null,\"\"", "3,\"\""),
-                    ROWS.replace("null,\"\"", "{},\"\""), ROWS.replace("null,\"\"", "[],\"\""),
-                    ROWS.replace("[\"a\",", "[null,"), ROWS.replace("[\"雪\"]", "[null]"),
-                    ROWS.replace("[\"雪\"]", "[1]"), ROWS.replace("true", "\"true\""),
-                    ROWS.replace("\"elapsedMs\":", "\"rowCount\":2,\"elapsedMs\":"),
-                    ROWS.replace("-9223372036854775808", "9223372036854775808"),
-                    ROWS.replace("-9223372036854775808", "-9223372036854775809"),
-                    ROWS.replace("-9223372036854775808", "2.0"), ROWS.replace("-9223372036854775808", "\"2\""),
+                    ROWS.replace("\\u0000", "\\u00xz"),
                     "{\"header\":[],\"data\":[],\"meta\":{}}"}) {
                 wire.bad(bad.getBytes(StandardCharsets.UTF_8));
             }
@@ -192,7 +194,29 @@ public class GraphStoreDataTest {
     }
 
     @Test
-    public void lz4ResponseIsBoundedAndCheckedBeforeParsing() throws Exception {
+    public void queryUsesLogStoreConversionsAndIgnoresAdditionalMembers() throws Exception {
+        try (Wire wire = new Wire(new ClientConfiguration(), null)) {
+            for (String value : new String[]{
+                    ROWS.replace("[null,\"\",\"雪\\u0000\"]", "[]"),
+                    ROWS.replace("null,\"\"", "false,\"\""),
+                    ROWS.replace("null,\"\"", "3,\"\""),
+                    ROWS.replace("null,\"\"", "{},\"\""),
+                    ROWS.replace("[\"a\",", "[null,"),
+                    ROWS.replace("[\"雪\"]", "[1]"),
+                    ROWS.replace("-9223372036854775808", "\"2\""),
+                    ROWS.replace("-9223372036854775808", "2.0"),
+                    ROWS.replace("\"elapsedMs\":", "\"diagnostic\":{},\"elapsedMs\":"),
+                    ROWS.substring(0, ROWS.length() - 1) + ",\"extra\":1}"}) {
+                wire.responseBody = value.getBytes(StandardCharsets.UTF_8);
+                wire.client.getGraphStoreData(QUERY);
+            }
+            wire.responseBody = ROWS.replace("null,\"\"", "42,\"\"").getBytes(StandardCharsets.UTF_8);
+            assertEquals("42", wire.client.getGraphStoreData(QUERY).getData().getValues().get(0).get(0));
+        }
+    }
+
+    @Test
+    public void lz4ResponseUsesSharedDecoderAndPreservesErrors() throws Exception {
         try (Wire wire = new Wire(new ClientConfiguration(), null)) {
             byte[] raw = ROWS.getBytes(StandardCharsets.UTF_8);
             byte[] compressed = LZ4Encoder.compressToLhLz4Chunk(raw);
@@ -200,13 +224,14 @@ public class GraphStoreDataTest {
             wire.responseHeaders.put(Consts.CONST_X_SLS_COMPRESSTYPE, "lz4");
             wire.responseHeaders.put(Consts.CONST_X_SLS_BODYRAWSIZE, String.valueOf(raw.length));
             assertRows(wire.client.getGraphStoreData(QUERY));
-            for (String size : new String[]{null, "", "-1", "0", "abc", "268435457", "4294967296", "9223372036854775808", String.valueOf(raw.length - 1), String.valueOf(raw.length + 1)}) {
+            for (String size : new String[]{null, "", "-1", "0", "abc", "4294967296", "9223372036854775808", String.valueOf(raw.length - 1), String.valueOf(raw.length + 1)}) {
                 wire.responseHeaders.put(Consts.CONST_X_SLS_BODYRAWSIZE, size);
                 wire.bad(compressed);
             }
             wire.responseHeaders.put(Consts.CONST_X_SLS_BODYRAWSIZE, String.valueOf(raw.length));
             wire.bad(Arrays.copyOf(compressed, compressed.length - 1));
-            wire.bad(Arrays.copyOf(compressed, compressed.length + 1));
+            wire.responseBody = Arrays.copyOf(compressed, compressed.length + 1);
+            assertRows(wire.client.getGraphStoreData(QUERY)); // Shared LogStore decoder accepts trailing compressed bytes.
             for (String compression : new String[]{"none", "zstd", "deflate", "unknown"}) {
                 wire.responseHeaders.put(Consts.CONST_X_SLS_COMPRESSTYPE, compression);
                 wire.bad(raw);
