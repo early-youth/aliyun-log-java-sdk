@@ -313,6 +313,16 @@ public class GraphStoreManagementTest {
     }
 
     @Test
+    public void updateNameIsValidatedLocally() throws Exception {
+        CapturingClient client = new CapturingClient();
+        for (String name : new String[]{"", "renamed"}) {
+            expectInvalid(() -> client.updateGraphStoreCollectionSchema(
+                    new UpdateGraphStoreCollectionSchemaRequest("project", "store", "a.@b", update(name))));
+        }
+        assertEquals(0, client.calls);
+    }
+
+    @Test
     public void serviceErrorsAreNotRetriedByManagementMethods() throws Exception {
         CapturingClient client = new CapturingClient();
         for (int status : new int[]{400, 403, 404, 409, 413, 500, 503}) {

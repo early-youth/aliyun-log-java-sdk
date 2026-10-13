@@ -11,6 +11,27 @@ import static org.junit.Assert.*;
 
 public class GraphStoreSchemaTest {
     @Test
+    public void updateJsonUsesTypedReplacementAndRejectsUnknownFields() {
+        JSONObject input = JSONObject.parseObject("{\"name\":\"one\",\"description\":\"雪\",\"ttlSeconds\":null,\"fields\":[]}");
+        GraphStoreCollectionSchemaUpdate update = GraphStoreSchemaCodec.readCollectionSchemaUpdate(input);
+        assertEquals("雪", update.getDescription());
+        assertNull(update.getTtlSeconds());
+        assertFalse(GraphStoreSchemaCodec.encode(update).containsKey("ttlSeconds"));
+        input.put("ttlSeconds", 0L);
+        assertEquals(Long.valueOf(0), GraphStoreSchemaCodec.readCollectionSchemaUpdate(input).getTtlSeconds());
+        for (String ttl : new String[]{"-1", "9223372036854775808", "1.5"}) {
+            input.put("ttlSeconds", JSONObject.parse(ttl));
+            invalid(() -> GraphStoreSchemaCodec.readCollectionSchemaUpdate(input));
+        }
+        input.remove("ttlSeconds");
+        input.put("graphLayout", "vertex");
+        invalid(() -> GraphStoreSchemaCodec.readCollectionSchemaUpdate(input));
+        input.remove("graphLayout");
+        input.remove("name");
+        invalid(() -> GraphStoreSchemaCodec.readCollectionSchemaUpdate(input));
+    }
+
+    @Test
     public void fixedLayoutsAndOptionalKeysRoundTrip() {
         GraphStoreBaseSchema base = GraphStoreManagementTest.base();
         base.getVertexLayout().setCk(Collections.<String>emptyList());

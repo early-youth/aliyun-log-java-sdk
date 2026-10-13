@@ -333,13 +333,26 @@ public final class GraphStoreSchemaCodec {
         }
         result.setCollectionKeyValues(collectionKeyValues);
         if (value.get("ttlSeconds") != null) result.setTtlSeconds(ttl(integer(value, "ttlSeconds")));
+        result.setFields(readFields(value));
+        return result;
+    }
+
+    private static List<GraphStoreFieldSchema> readFields(JSONObject value) {
         List<GraphStoreFieldSchema> fields = new ArrayList<GraphStoreFieldSchema>();
         for (Object item : field(value, "fields", JSONArray.class)) {
             if (!(item instanceof JSONObject)) throw new IllegalArgumentException("invalid fields item");
             fields.add(readFieldSchema((JSONObject) item));
         }
-        result.setFields(fields);
-        return result;
+        return fields;
     }
 
+    public static GraphStoreCollectionSchemaUpdate readCollectionSchemaUpdate(JSONObject value) {
+        required(value, "GraphStoreCollectionSchemaUpdate");
+        known(value, "name", "description", "ttlSeconds", "fields");
+        GraphStoreCollectionSchemaUpdate result = new GraphStoreCollectionSchemaUpdate(
+                text(field(value, "name", String.class), "name", false),
+                text(field(value, "description", String.class), "description", false), readFields(value));
+        if (value.get("ttlSeconds") != null) result.setTtlSeconds(ttl(integer(value, "ttlSeconds")));
+        return result;
+    }
 }
