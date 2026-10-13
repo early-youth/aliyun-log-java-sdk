@@ -20,8 +20,9 @@ Get/Update/Delete request constructors take a String collectionSchemaName, never
 Get/List retain opaque JSONObject schemas, require name and do not add an ID; storeId stays long.
 Update value.name must equal the path name; the service enforces immutable name/layout/keys.
 Pagination uses raw last-name tokens in byte order (default 100/max 1000); SDK tokens remain opaque.
-The service owns configurable name validation (default lowercase/digits/interior '-'/'_', 2..63)
-and the 10240 logical-schema create quota. SDK path validation only rejects unsafe segments.
+The service validates CollectionSchema names against `^[A-Za-z][A-Za-z0-9._@-]{0,127}$`
+and the 1000 logical-schema quota. Store names retain the configurable LogStore name rules.
+SDK path validation only rejects unsafe segments.
 Nullable BigInteger splitHash supports the entire unsigned 64-bit range; null differs from zero.
 Nullable Integer offset/size/pageSize omit the corresponding parameter.
 
@@ -61,7 +62,10 @@ An ACK does not imply query visibility or durability; timeout results may be unk
 retrying can duplicate delivery. The caller owns query convergence polling.
 
 GetGraphStore returns getShards() with ordered unique signed-int32 shardId; List keeps summary items.
-Query requires from/to long values in uint32 range, from < to, with [from,to) semantics.
+Query sends long start/end with 0 <= start <= end and closed [start,end] semantics.
+The three-argument request constructor defaults to [0,4294967295]; equal bounds are valid.
+No from/to aliases are supported. Collection names accept `.` and `@`, except `.`/`..`; unsafe path
+characters are rejected. The service validates that the Update body name matches the path; the SDK forwards the body unchanged.
 It returns data.fields/values plus meta (signed-long elapsedMs, truncated and warnings).
 Old header/rowCount/peakMemoryBytes/resultBytes are not accepted. Missing/null/mistyped fields, row width mismatches,
 invalid UTF-8/JSON or compressed responses fail as BadResponse with HTTP code/requestId,
@@ -75,3 +79,10 @@ GraphStoreManagementE2ETool in the existing functiontest tree runs one native ma
 the GraphStore E2E Runner. It reads credentials only from GRAPHSTORE_E2E_ACCESS_KEY_ID/
 GRAPHSTORE_E2E_ACCESS_KEY_SECRET. The Runner owns the lifecycle, assertions and cleanup.
 It exposes all 13 management, write and query operations through the same Runner.
+The test bridge uses the unshaded SDK and its Maven runtime classpath. After test compilation and
+package, resolve dependencies with `mvn dependency:build-classpath -DincludeScope=runtime
+-Dmdep.outputFile=target/graphstore-e2e-classpath.txt`; pass the bridge test classes/JAR,
+the ordinary SDK JAR, and that classpath to the Runner. The shaded `jar-with-dependencies`
+relocates FastJSON/Protobuf/HTTP packages and does not match this bridge's imports.
+
+The service caps the complete normalized logical CollectionSchema JSON array at 1 MiB (UTF-8 bytes, BaseSchema excluded). Create/Update exceeding this cap are rejected; Delete can clean up legacy oversized stores.

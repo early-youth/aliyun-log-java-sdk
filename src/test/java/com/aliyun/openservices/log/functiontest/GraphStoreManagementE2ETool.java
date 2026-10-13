@@ -68,9 +68,9 @@ public class GraphStoreManagementE2ETool {
                     break;
                 }
                 case "GetGraphStoreData": {
-                    if (!p.containsKey("from") || !p.containsKey("to")) throw new IllegalArgumentException("query requires from and to");
+                    if (!p.containsKey("start") || !p.containsKey("end")) throw new IllegalArgumentException("query requires start and end");
                     GetGraphStoreDataRequest request = new GetGraphStoreDataRequest(project, name, p.getString("query"),
-                            p.getLongValue("from"), p.getLongValue("to"));
+                            p.getLongValue("start"), p.getLongValue("end"));
                     request.setSession(p.getString("session"));
                     GetGraphStoreDataResponse r = client.getGraphStoreData(request);
                     response = r;

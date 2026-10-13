@@ -85,11 +85,30 @@ public class GraphStoreDataTest {
                     JSONObject body = JSONObject.parseObject(new String(wire.body, StandardCharsets.UTF_8));
                     assertEquals(4, body.size());
                     assertEquals(query, body.get("query"));
-                    assertEquals(0L, body.getLongValue("from"));
-                    assertEquals(0xffffffffL, body.getLongValue("to"));
+                    assertEquals(0L, body.getLongValue("start"));
+                    assertEquals(0xffffffffL, body.getLongValue("end"));
                     assertEquals("opaque\u0000雪", body.get("session"));
                     assertRows(result);
                 }
+            }
+        }
+    }
+
+    @Test
+    public void closedInt64TimeRangeAndDefaultsAreSentExactly() throws Exception {
+        try (Wire wire = new Wire(new ClientConfiguration(), null)) {
+            for (GetGraphStoreDataRequest request : new GetGraphStoreDataRequest[]{
+                    new GetGraphStoreDataRequest("project", "store", "q"),
+                    new GetGraphStoreDataRequest("project", "store", "q", 0, 0),
+                    new GetGraphStoreDataRequest("project", "store", "q", 4294967296L, Long.MAX_VALUE)}) {
+                wire.client.getGraphStoreData(request);
+                JSONObject body = JSONObject.parseObject(new String(wire.body, StandardCharsets.UTF_8));
+                assertEquals(3, body.size());
+                assertEquals(request.getStart(), body.getLongValue("start"));
+                assertEquals(request.getEnd(), body.getLongValue("end"));
+                assertFalse(body.containsKey("from"));
+                assertFalse(body.containsKey("to"));
+                assertFalse(body.containsKey("session"));
             }
         }
     }
@@ -111,7 +130,7 @@ public class GraphStoreDataTest {
                 expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(new GetGraphStoreDataRequest("project", "store", empty, 10, 20)));
             }
             Logs.LogGroup partial = Logs.LogGroup.newBuilder().addLogs(Logs.Log.newBuilder().buildPartial()).buildPartial();
-            for (long[] range : new long[][]{{0, 0}, {2, 1}, {-1, 1}, {0, 0x100000000L}, {0x100000000L, 0x100000001L}}) {
+            for (long[] range : new long[][]{{2, 1}, {-1, 1}, {0, -1}}) {
                 expect(ErrorCodes.INVALID_PARAMETER, () -> client.getGraphStoreData(
                         new GetGraphStoreDataRequest("project", "store", "q", range[0], range[1])));
             }

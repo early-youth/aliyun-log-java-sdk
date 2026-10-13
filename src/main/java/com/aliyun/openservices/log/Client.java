@@ -6488,13 +6488,13 @@ public class Client implements LogService {
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
         CodingUtils.assertStringNotNullOrEmpty(request.getQuery(), "query");
-        if (request.getFrom() < 0 || request.getFrom() >= request.getTo() || request.getTo() > 0xffffffffL) {
-            throw new LogException(ErrorCodes.INVALID_PARAMETER, "GraphStore requires uint32 from < to", "");
+        if (request.getStart() < 0 || request.getStart() > request.getEnd()) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "GraphStore requires 0 <= start <= end", "");
         }
         JSONObject query = new JSONObject();
         query.put("query", request.getQuery());
-        query.put("from", request.getFrom());
-        query.put("to", request.getTo());
+        query.put("start", request.getStart());
+        query.put("end", request.getEnd());
         if (request.getSession() != null) query.put("session", request.getSession());
         byte[] body = encodeToUtf8(query.toJSONString());
         Map<String, String> headers = GetCommonHeadPara(request.GetProject());
@@ -6509,6 +6509,12 @@ public class Client implements LogService {
     private static void validateGraphStoreName(String name) throws LogException {
         if (name == null || !name.matches("[A-Za-z0-9_-]+")) {
             throw new LogException(ErrorCodes.INVALID_PARAMETER, "invalid GraphStore path segment", "");
+        }
+    }
+
+    private static void validateGraphStoreCollectionName(String name) throws LogException {
+        if (name == null || !name.matches("[A-Za-z0-9_.@-]+") || ".".equals(name) || "..".equals(name)) {
+            throw new LogException(ErrorCodes.INVALID_PARAMETER, "invalid GraphStore collection path segment", "");
         }
     }
 
@@ -6682,7 +6688,7 @@ public class Client implements LogService {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
-        validateGraphStoreName(request.getCollectionSchemaName());
+        validateGraphStoreCollectionName(request.getCollectionSchemaName());
         ResponseMessage response = sendJson(request);
         String requestId = GetRequestId(response.getHeaders());
         JSONObject value = graphStoreResponseBody(response, requestId);
@@ -6727,7 +6733,7 @@ public class Client implements LogService {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
-        validateGraphStoreName(request.getCollectionSchemaName());
+        validateGraphStoreCollectionName(request.getCollectionSchemaName());
         CodingUtils.assertParameterNotNull(request.getValue(), "value");
         ResponseMessage response = sendJson(request, graphStoreSchemaBody(request));
         return new UpdateGraphStoreCollectionSchemaResponse(response.getHeaders());
@@ -6738,7 +6744,7 @@ public class Client implements LogService {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
         validateGraphStoreName(request.getStoreName());
-        validateGraphStoreName(request.getCollectionSchemaName());
+        validateGraphStoreCollectionName(request.getCollectionSchemaName());
         ResponseMessage response = sendJson(request);
         return new DeleteGraphStoreCollectionSchemaResponse(response.getHeaders());
     }

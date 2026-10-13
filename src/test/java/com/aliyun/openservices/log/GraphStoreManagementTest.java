@@ -60,6 +60,7 @@ public class GraphStoreManagementTest {
         client.check(HttpMethod.POST, "/graphstore/store/collectionschemas");
         assertEquals(1, client.jsonBody().size());
         assertTrue(client.jsonBody().get("value") instanceof JSONObject);
+        schema.put("name", "9223372036854775807");
         client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest("project", "store", "9223372036854775807", schema));
         client.check(HttpMethod.PUT, "/graphstore/store/collectionschemas/9223372036854775807");
         assertEquals(Long.MAX_VALUE, client.jsonBody().getJSONObject("value").getLongValue("id"));
@@ -148,6 +149,7 @@ public class GraphStoreManagementTest {
         assertTrue(new String(client.body, StandardCharsets.UTF_8).contains("\"commonFieldNames\":null"));
         client.createGraphStoreCollectionSchema(new CreateGraphStoreCollectionSchemaRequest("project", "store", schema));
         assertEquals(schema, client.jsonBody().getJSONObject("value"));
+        schema.put("name", "aa");
         client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest("project", "store", "aa", schema));
         String wire = new String(client.body, StandardCharsets.UTF_8);
         assertFalse(wire.contains("$ref"));
@@ -198,7 +200,7 @@ public class GraphStoreManagementTest {
     @Test
     public void invalidRequestsDoNotSend() throws Exception {
         CapturingClient client = new CapturingClient();
-        for (String name : new String[]{null, "", "../other", "a/b", "a%2fb", "a?x=y", "a#b", "雪", "a\u0000b"}) {
+        for (String name : new String[]{null, "", ".", "..", "a\\b", "a b", "../other", "a/b", "a%2fb", "a?x=y", "a#b", "雪", "a\u0000b"}) {
             expectInvalid(() -> client.getGraphStoreCollectionSchema(
                     new GetGraphStoreCollectionSchemaRequest("project", "store", name)));
             expectInvalid(() -> client.updateGraphStoreCollectionSchema(
@@ -225,7 +227,7 @@ public class GraphStoreManagementTest {
     @Test
     public void collectionNamesRemainOpaque() throws Exception {
         CapturingClient client = new CapturingClient();
-        for (String name : new String[]{"12", "1a", "aa", new String(new char[63]).replace('\0', 'a'),
+        for (String name : new String[]{"a.b", "a@b", "a.@b", "12", "1a", "aa", new String(new char[63]).replace('\0', 'a'),
                 "a", new String(new char[64]).replace('\0', 'a')}) {
             // Configurable length/name rules belong to the service, not the SDK.
             client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchema\":{\"name\":\"" + name + "\"}}";
@@ -282,6 +284,46 @@ public class GraphStoreManagementTest {
         expectBadResponse(() -> client.getGraphStoreBaseSchema(new GetGraphStoreBaseSchemaRequest("project", "store")));
         client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchemas\":[],\"nextPageToken\":null}";
         expectBadResponse(() -> client.listGraphStoreCollectionSchemas(new ListGraphStoreCollectionSchemasRequest("project", "store")));
+    }
+
+    @Test
+    public void updateNameIsValidatedByService() throws Exception {
+        for (String body : new String[]{"{\"fields\":[]}", "{\"name\":\"renamed\",\"fields\":[]}"}) {
+            final JSONObject schema = JSONObject.parseObject(body);
+            final int[] calls = {0};
+            DefaultServiceClient transport = new DefaultServiceClient(new ClientConfiguration()) {
+                @Override
+                public ResponseMessage sendRequestCore(Request request, String charset) {
+                    calls[0]++;
+                    assertEquals(HttpMethod.PUT, request.getMethod());
+                    assertEquals("http://project.example.com/graphstore/store/collectionschemas/a.@b", request.getUri());
+                    try {
+                        byte[] wire = com.aliyun.openservices.log.http.utils.IOUtils.readStreamAsByteArray(request.getContent());
+                        assertEquals(schema, JSONObject.parseObject(new String(wire, StandardCharsets.UTF_8)).getJSONObject("value"));
+                    } catch (java.io.IOException error) {
+                        throw new AssertionError(error);
+                    }
+                    ResponseMessage response = new ResponseMessage();
+                    response.setStatusCode(400);
+                    response.addHeader(Consts.CONST_X_SLS_REQUESTID, "update-name-request");
+                    response.setContent(new ByteArrayInputStream("{\"errorCode\":\"ParameterInvalid\",\"errorMessage\":\"invalid name\"}".getBytes(StandardCharsets.UTF_8)));
+                    return response;
+                }
+            };
+            Client client = new Client("http://example.com", new StaticCredentialsProvider(
+                    new DefaultCredentials("key", "secret", null)), transport, "127.0.0.1");
+            try {
+                client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest("project", "store", "a.@b", schema));
+                fail("expected service validation error");
+            } catch (LogException error) {
+                assertEquals(400, error.GetHttpCode());
+                assertEquals("ParameterInvalid", error.GetErrorCode());
+                assertEquals("update-name-request", error.GetRequestId());
+            } finally {
+                client.shutdown();
+            }
+            assertEquals(1, calls[0]);
+        }
     }
 
     @Test
