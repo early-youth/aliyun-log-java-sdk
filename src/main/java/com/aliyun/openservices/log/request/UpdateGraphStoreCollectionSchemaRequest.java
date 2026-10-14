@@ -3,7 +3,6 @@ package com.aliyun.openservices.log.request;
 import com.aliyun.openservices.log.http.client.HttpMethod;
 import com.alibaba.fastjson.JSONObject;
 import com.aliyun.openservices.log.common.GraphStoreCollectionSchemaUpdate;
-import com.aliyun.openservices.log.internal.GraphStoreSchemaCodec;
 
 /** Request for the UpdateGraphStoreCollectionSchema management API. Schemas use concrete logical models. */
 public class UpdateGraphStoreCollectionSchemaRequest extends BasicRequest {
@@ -56,7 +55,7 @@ public class UpdateGraphStoreCollectionSchemaRequest extends BasicRequest {
     @Override
     public Object getBody() {
         JSONObject body = new JSONObject();
-        body.put("value", GraphStoreSchemaCodec.encode(collectionSchema));
+        body.put("value", collectionSchema);
         return body;
     }
 }

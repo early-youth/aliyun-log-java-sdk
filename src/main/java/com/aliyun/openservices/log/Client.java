@@ -6528,16 +6528,6 @@ public class Client implements LogService {
         return error;
     }
 
-    private JSONObject graphStoreResponseBody(ResponseMessage response, String requestId) throws LogException {
-        try {
-            JSONObject value = parseResponseBody(response, requestId);
-            if (value == null) throw new IllegalArgumentException("GraphStore response must be a JSON object");
-            return value;
-        } catch (LogException error) {
-            throw graphStoreBadResponse(error, response);
-        }
-    }
-
     private static GraphStore readGraphStore(JSONObject value) {
         return new GraphStore(GraphStoreSchemaCodec.int32(value, "projectId"),
                 GraphStoreSchemaCodec.field(value, "storeName", String.class),
@@ -6572,7 +6562,7 @@ public class Client implements LogService {
         ResponseMessage response = sendJson(request);
         try {
             String requestId = GetRequestId(response.getHeaders());
-            JSONObject value = graphStoreResponseBody(response, requestId);
+            JSONObject value = parseResponseBody(response, requestId);
             GraphStore graphStore = readGraphStore(value);
             JSONArray items = GraphStoreSchemaCodec.field(value, "shards", JSONArray.class);
             List<GraphStoreShardInfo> shards = new ArrayList<GraphStoreShardInfo>(items.size());
@@ -6584,7 +6574,7 @@ public class Client implements LogService {
                 shards.add(new GraphStoreShardInfo(id));
             }
             return new GetGraphStoreResponse(response.getHeaders(), graphStore, shards);
-        } catch (RuntimeException error) {
+        } catch (LogException | RuntimeException error) {
             throw graphStoreBadResponse(error, response);
         }
     }
@@ -6596,7 +6586,7 @@ public class Client implements LogService {
         ResponseMessage response = sendJson(request);
         try {
             String requestId = GetRequestId(response.getHeaders());
-            JSONObject value = graphStoreResponseBody(response, requestId);
+            JSONObject value = parseResponseBody(response, requestId);
             JSONArray items = GraphStoreSchemaCodec.field(value, "stores", JSONArray.class);
             List<GraphStore> stores = new ArrayList<GraphStore>(items.size());
             for (Object item : items) {
@@ -6608,7 +6598,7 @@ public class Client implements LogService {
             long count = GraphStoreSchemaCodec.integer(value, "count");
             return new ListGraphStoresResponse(response.getHeaders(), stores, count,
                     GraphStoreSchemaCodec.integer(value, "total"));
-        } catch (RuntimeException error) {
+        } catch (LogException | RuntimeException error) {
             throw graphStoreBadResponse(error, response);
         }
     }
@@ -6643,13 +6633,13 @@ public class Client implements LogService {
         ResponseMessage response = sendJson(request);
         try {
             String requestId = GetRequestId(response.getHeaders());
-            JSONObject value = graphStoreResponseBody(response, requestId);
+            JSONObject value = parseResponseBody(response, requestId);
             return new GetGraphStoreBaseSchemaResponse(response.getHeaders(),
                     GraphStoreSchemaCodec.int32(value, "projectId"),
                     GraphStoreSchemaCodec.field(value, "storeName", String.class),
                     GraphStoreSchemaCodec.integer(value, "storeId"),
-                    GraphStoreSchemaCodec.readBaseSchema(GraphStoreSchemaCodec.field(value, "baseSchema", JSONObject.class)));
-        } catch (RuntimeException error) {
+                    GraphStoreSchemaCodec.readBaseSchema(value.getJSONObject("baseSchema")));
+        } catch (LogException | RuntimeException error) {
             throw graphStoreBadResponse(error, response);
         }
     }
@@ -6673,13 +6663,12 @@ public class Client implements LogService {
         ResponseMessage response = sendJson(request);
         try {
             String requestId = GetRequestId(response.getHeaders());
-            JSONObject value = graphStoreResponseBody(response, requestId);
-            GraphStoreCollectionSchema schema = GraphStoreSchemaCodec.readCollectionSchema(
-                    GraphStoreSchemaCodec.field(value, "collectionSchema", JSONObject.class));
+            JSONObject value = parseResponseBody(response, requestId);
+            GraphStoreCollectionSchema schema = value.getObject("collectionSchema", GraphStoreCollectionSchema.class);
             return new GetGraphStoreCollectionSchemaResponse(response.getHeaders(),
                     GraphStoreSchemaCodec.int32(value, "projectId"),
                     GraphStoreSchemaCodec.field(value, "storeName", String.class), schema);
-        } catch (RuntimeException error) {
+        } catch (LogException | RuntimeException error) {
             throw graphStoreBadResponse(error, response);
         }
     }
@@ -6692,18 +6681,14 @@ public class Client implements LogService {
         ResponseMessage response = sendJson(request);
         try {
             String requestId = GetRequestId(response.getHeaders());
-            JSONObject value = graphStoreResponseBody(response, requestId);
-            JSONArray items = GraphStoreSchemaCodec.field(value, "collectionSchemas", JSONArray.class);
-            List<GraphStoreCollectionSchema> schemas = new ArrayList<GraphStoreCollectionSchema>(items.size());
-            for (Object item : items) {
-                if (!(item instanceof JSONObject)) throw new IllegalArgumentException("invalid GraphStore collection item");
-                schemas.add(GraphStoreSchemaCodec.readCollectionSchema((JSONObject) item));
-            }
+            JSONObject value = parseResponseBody(response, requestId);
+            JSONArray items = value.getJSONArray("collectionSchemas");
+            List<GraphStoreCollectionSchema> schemas = items == null ? null : items.toJavaList(GraphStoreCollectionSchema.class);
             String nextPageToken = value.getString("nextPageToken");
             return new ListGraphStoreCollectionSchemasResponse(response.getHeaders(),
                     GraphStoreSchemaCodec.int32(value, "projectId"),
                     GraphStoreSchemaCodec.field(value, "storeName", String.class), schemas, nextPageToken);
-        } catch (RuntimeException error) {
+        } catch (LogException | RuntimeException error) {
             throw graphStoreBadResponse(error, response);
         }
     }

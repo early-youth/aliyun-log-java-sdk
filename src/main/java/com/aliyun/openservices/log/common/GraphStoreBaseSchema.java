@@ -2,7 +2,6 @@ package com.aliyun.openservices.log.common;
 
 import java.io.Serializable;
 import java.util.List;
-import java.util.ArrayList;
 
 /** Logical GraphStore schema; physical IDs, roles and versions remain service owned. */
 public class GraphStoreBaseSchema implements Serializable {
@@ -11,8 +10,8 @@ public class GraphStoreBaseSchema implements Serializable {
     private Boolean timeStateEnable;
     /** Required nonnegative seconds; zero disables expiry. */
     private Long ttlSeconds;
-    /** Common property names; defaults to an empty array. */
-    private List<String> commonFieldNames = new ArrayList<String>();
+    /** Optional common property names; unset values remain null. */
+    private List<String> commonFieldNames;
     /** Required global index setting; configuration combinations are validated by the service. */
     private Boolean indexEnable;
     /** Optional global FullText configuration. */
@@ -40,7 +39,7 @@ public class GraphStoreBaseSchema implements Serializable {
     public Long getTtlSeconds() { return ttlSeconds; }
     public void setTtlSeconds(Long ttlSeconds) { this.ttlSeconds = ttlSeconds; }
 
-    /** Common property names; defaults to an empty array. */
+    /** Optional common property names; unset values remain null. */
     public List<String> getCommonFieldNames() { return commonFieldNames; }
     public void setCommonFieldNames(List<String> commonFieldNames) { this.commonFieldNames = commonFieldNames; }
 

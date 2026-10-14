@@ -37,10 +37,10 @@ public class GetGraphStoreDataResponse extends Response {
         private final List<List<String>> values;
 
         private Data(JSONObject value) {
-            fields = strings(field(value, "fields", JSONArray.class));
+            fields = field(value, "fields", JSONArray.class).toJavaList(String.class);
             JSONArray rows = field(value, "values", JSONArray.class);
             values = new ArrayList<List<String>>(rows.size());
-            for (int i = 0; i < rows.size(); i++) values.add(strings(rows.getJSONArray(i)));
+            for (int i = 0; i < rows.size(); i++) values.add(rows.getJSONArray(i).toJavaList(String.class));
         }
 
         public List<String> getFields() { return fields; }
@@ -56,7 +56,7 @@ public class GetGraphStoreDataResponse extends Response {
         private Meta(JSONObject value) {
             elapsedMs = required(value.getLong("elapsedMs"), "elapsedMs");
             truncated = required(value.getBoolean("truncated"), "truncated");
-            warnings = strings(field(value, "warnings", JSONArray.class));
+            warnings = field(value, "warnings", JSONArray.class).toJavaList(String.class);
         }
 
         public long getElapsedMs() { return elapsedMs; }
@@ -96,11 +96,5 @@ public class GetGraphStoreDataResponse extends Response {
         Object field = value.get(name);
         if (!type.isInstance(field)) throw new IllegalArgumentException("invalid GraphStore field " + name);
         return type.cast(field);
-    }
-
-    private static List<String> strings(JSONArray array) {
-        List<String> result = new ArrayList<String>(array.size());
-        for (int i = 0; i < array.size(); i++) result.add(array.getString(i));
-        return result;
     }
 }

@@ -29,7 +29,7 @@ import static org.junit.Assert.*;
 public class GraphStoreManagementTest {
     private static final String STORE = "{\"projectId\":2147483647,\"storeName\":\"store\","
             + "\"state\":\"READY\",\"currentShardCount\":2}";
-    private static final String SCHEMA = GraphStoreSchemaCodec.encode(collection("9223372036854775807")).toJSONString();
+    private static final String SCHEMA = JSONObject.toJSONString(collection("9223372036854775807"));
     private static final String STORE_WITH_SHARDS = STORE.substring(0, STORE.length() - 1)
             + ",\"shards\":[{\"shardId\":2},{\"shardId\":7}]}";
 
@@ -159,6 +159,43 @@ public class GraphStoreManagementTest {
     }
 
     @Test
+    public void schemaBusinessRulesAreLeftToTheService() throws Exception {
+        CapturingClient client = new CapturingClient();
+        GraphStoreCollectionSchema schema = collection("");
+        schema.setDescription("");
+        schema.setTtlSeconds(-1L);
+        GraphStoreIndexConfig index = new GraphStoreIndexConfig(true);
+        index.setFullTextIndex(new GraphStoreFullTextIndex("", false, false));
+        schema.setFields(Arrays.asList(new GraphStoreFieldSchema("", GraphStoreFieldType.STRING, index)));
+        client.createGraphStoreCollectionSchema(new CreateGraphStoreCollectionSchemaRequest("project", "store", schema));
+        JSONObject body = client.jsonBody().getJSONObject("value");
+        assertEquals("", body.getString("name"));
+        assertEquals("", body.getString("description"));
+        assertEquals(-1L, body.getLongValue("ttlSeconds"));
+        assertEquals("", body.getJSONArray("fields").getJSONObject(0).getJSONObject("indexConfig").getJSONObject("fullTextIndex").getString("token"));
+        assertEquals(1, client.calls);
+    }
+
+    @Test
+    public void missingSchemaValuesUseNativeNulls() throws Exception {
+        CapturingClient client = new CapturingClient();
+        client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"storeId\":1}";
+        assertNull(client.getGraphStoreBaseSchema(new GetGraphStoreBaseSchemaRequest("project", "store")).getBaseSchema());
+        assertNull(client.getGraphStoreCollectionSchema(new GetGraphStoreCollectionSchemaRequest("project", "store", "one")).getCollectionSchema());
+        assertNull(client.listGraphStoreCollectionSchemas(new ListGraphStoreCollectionSchemasRequest("project", "store")).getCollectionSchemas());
+        client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchema\":{\"newOption\":true}}";
+        GraphStoreCollectionSchema schema = client.getGraphStoreCollectionSchema(
+                new GetGraphStoreCollectionSchemaRequest("project", "store", "one")).getCollectionSchema();
+        assertNull(schema.getName());
+        assertNull(schema.getFields());
+        client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchemas\":[null,{}]}";
+        java.util.List<GraphStoreCollectionSchema> schemas = client.listGraphStoreCollectionSchemas(
+                new ListGraphStoreCollectionSchemasRequest("project", "store")).getCollectionSchemas();
+        assertNull(schemas.get(0));
+        assertNull(schemas.get(1).getFields());
+    }
+
+    @Test
     public void paginationUsesParentParameterTable() {
         ListGraphStoresRequest stores = new ListGraphStoresRequest("project");
         stores.SetParam("offset", "7");
@@ -254,7 +291,7 @@ public class GraphStoreManagementTest {
         for (String name : new String[]{"a.b", "a@b", "a.@b", "12", "1a", "aa", new String(new char[63]).replace('\0', 'a'),
                 "a", new String(new char[64]).replace('\0', 'a')}) {
             // Configurable length/name rules belong to the service, not the SDK.
-            client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchema\":" + GraphStoreSchemaCodec.encode(collection(name)).toJSONString() + "}";
+            client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchema\":" + JSONObject.toJSONString(collection(name)) + "}";
             GetGraphStoreCollectionSchemaRequest get = new GetGraphStoreCollectionSchemaRequest("project", "store", name);
             get.setCollectionSchemaName(name);
             assertEquals(name, get.getCollectionSchemaName());
@@ -278,6 +315,14 @@ public class GraphStoreManagementTest {
     @Test
     public void malformedResponsesFailWithoutCoercion() throws Exception {
         CapturingClient client = new CapturingClient();
+        for (String body : new String[]{"", "null", "[]", "{"}) {
+            client.responseBody = body;
+            expectBadResponse(() -> client.getGraphStore(new GetGraphStoreRequest("project", "store")));
+            expectBadResponse(() -> client.listGraphStores(new ListGraphStoresRequest("project")));
+            expectBadResponse(() -> client.getGraphStoreBaseSchema(new GetGraphStoreBaseSchemaRequest("project", "store")));
+            expectBadResponse(() -> client.getGraphStoreCollectionSchema(new GetGraphStoreCollectionSchemaRequest("project", "store", "one")));
+            expectBadResponse(() -> client.listGraphStoreCollectionSchemas(new ListGraphStoreCollectionSchemasRequest("project", "store")));
+        }
         for (String shards : new String[]{"null", "{}", "[null]", "[{}]", "[{\"shardId\":2147483648}]"}) {
             client.responseBody = STORE.substring(0, STORE.length() - 1) + ",\"shards\":" + shards + "}";
             expectBadResponse(() -> client.getGraphStore(new GetGraphStoreRequest("project", "store")));
@@ -291,12 +336,6 @@ public class GraphStoreManagementTest {
         for (String id : new String[]{"null", "1.5", "\"42\"", "9223372036854775808"}) {
             client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"storeId\":" + id + ",\"baseSchema\":{}}";
             expectBadResponse(() -> client.getGraphStoreBaseSchema(new GetGraphStoreBaseSchemaRequest("project", "store")));
-        }
-        for (String name : new String[]{"null", "1.5", "42", "\"\"", "[]", "{}"}) {
-            client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchema\":{\"name\":" + name + "}}";
-            expectBadResponse(() -> client.getGraphStoreCollectionSchema(new GetGraphStoreCollectionSchemaRequest("project", "store", "aa")));
-            client.responseBody = "{\"projectId\":1,\"storeName\":\"store\",\"collectionSchemas\":[{\"name\":" + name + "}]}";
-            expectBadResponse(() -> client.listGraphStoreCollectionSchemas(new ListGraphStoreCollectionSchemasRequest("project", "store")));
         }
         client.responseBody = "{\"stores\":[{}],\"count\":1,\"total\":1}";
         expectBadResponse(() -> client.listGraphStores(new ListGraphStoresRequest("project")));

@@ -212,6 +212,11 @@ public class GraphStoreDataTest {
             }
             wire.responseBody = ROWS.replace("null,\"\"", "42,\"\"").getBytes(StandardCharsets.UTF_8);
             assertEquals("42", wire.client.getGraphStoreData(QUERY).getData().getValues().get(0).get(0));
+            JSONObject value = JSONObject.parseObject(ROWS);
+            value.getJSONObject("data").put("values", JSONObject.parseArray("[[null,\"\",42,1.25,true,{\"x\":1},[1,null]]]"));
+            wire.responseBody = value.toJSONString().getBytes(StandardCharsets.UTF_8);
+            assertEquals(Arrays.asList(null, "", "42", "1.25", "true", "{\"x\":1}", "[1,null]"),
+                    wire.client.getGraphStoreData(QUERY).getData().getValues().get(0));
         }
     }
 

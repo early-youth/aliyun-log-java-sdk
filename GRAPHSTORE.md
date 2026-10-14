@@ -74,9 +74,9 @@ unset; explicit empty lists remain empty lists. Vertex defaults are ck=[label], 
 routeKey=[label]; Edge defaults are ck=[source.label,label,target.label],
 pk=[source.id,target.id], routeKey=[source.label]. Defaults, valid key projections, index
 combinations, token rules, physical IDs/roles/versions and logical-to-physical compilation belong
-to the service. The SDK checks required values, empty elements, basic ranges and Update name equality.
-Unknown schema fields/enums, wrong known-field types and integer overflow return a parameter or
-BadResponse error instead of silently discarding configuration; upgrade the SDK to support new schema fields.
+to the service. Schema values use native FastJSON binding; missing members remain null and
+unknown members are ignored. Schema validation belongs to the service. Update name equality
+is checked when assembling the request path.
 
 Collection Get/Update/Delete take a string name. Names and pagination tokens remain opaque;
 SDK path checks allow safe ASCII characters (including `.`/`@` for collections) and reject `.`/`..`.
@@ -84,15 +84,21 @@ The service owns configurable naming limits, the 1000 collection create quota an
 normalized CollectionSchema JSON array cap (BaseSchema excluded).
 
 Models are Java 8 beans with constructors/getters/setters. Required Boolean/Long values use
-boxed types so missing values can be rejected; optional fields use null. Create/Update expose
+boxed types so missing values remain null. Create/Update expose
 getCollectionSchema/setCollectionSchema; HTTP still wraps them under value. Shared model
 objects expand as JSON values without $ref. No arbitrary JSONObject schema input remains.
+
+Schema conversion uses native FastJSON bean/collection mapping and the SDK's JSONSerializable
+enum pattern for lowercase vertex/edge values. Only BaseSchema's graphLayouts array needs
+adaptation. Missing schemas, members and collection-schema lists remain null; commonFieldNames
+also remains null when unset. Optional null values are omitted by native HTTP JSON serialization.
+Actual JSON parsing/conversion errors retain the existing BadResponse handling.
 
 Store IDs remain long; nullable BigInteger splitHash covers uint64 and distinguishes zero.
 Offset/size/pageSize and opaque pageToken share Request's parameter table with SetParam/GetParam.
 Typed null setters remove parameters; missing/null nextPageToken means no next page.
-GetGraphStore does not recheck shard count, order or uniqueness. Management IDs/counts and Schema
-integers reject overflow rather than using truncating getters. BadResponse errors retain the
+GetGraphStore does not recheck shard count, order or uniqueness. Management IDs/counts
+reject overflow rather than using truncating getters. BadResponse errors retain the
 actual HTTP code, requestId and cause. Native transport/network retry budgets remain unchanged.
 For V4, set ClientConfiguration signature version and region before constructing Client.
 
