@@ -34,8 +34,11 @@ public class GraphStoreManagementE2ETool {
         configuration.setSocketTimeout(timeout);
         configuration.setRequestTimeoutEnabled(true);
         configuration.setRequestTimeout(timeout);
-        configuration.setProxyHost(p.getString("dial_address").split(":")[0]);
-        configuration.setProxyPort(Integer.parseInt(p.getString("dial_address").split(":")[1]));
+        if (p.getString("dial_address") != null) {
+            java.net.URI proxy = java.net.URI.create("http://" + p.getString("dial_address"));
+            configuration.setProxyHost(proxy.getHost());
+            configuration.setProxyPort(proxy.getPort());
+        }
         if ("v4".equals(p.getString("signature_version"))) {
             configuration.setSignatureVersion(SignVersion.V4);
             configuration.setRegion(p.getString("region"));
