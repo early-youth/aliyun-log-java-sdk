@@ -14,7 +14,7 @@ public class GraphStoreCollectionSchema implements Serializable {
     private GraphStoreLayoutType graphLayout;
     /** Required complete user CK values; system CK values belong to the service. */
     private List<GraphStoreCollectionKeyValue> collectionKeyValues;
-    /** Null inherits BaseSchema; zero disables expiry; positive values are seconds. */
+    /** Null inherits BaseSchema; explicit seconds must be positive. */
     private Long ttlSeconds;
     /** Required property array; an empty array is valid. */
     private List<GraphStoreFieldSchema> fields;
@@ -45,7 +45,7 @@ public class GraphStoreCollectionSchema implements Serializable {
     public List<GraphStoreCollectionKeyValue> getCollectionKeyValues() { return collectionKeyValues; }
     public void setCollectionKeyValues(List<GraphStoreCollectionKeyValue> collectionKeyValues) { this.collectionKeyValues = collectionKeyValues; }
 
-    /** Null inherits BaseSchema; zero disables expiry; positive values are seconds. */
+    /** Null inherits BaseSchema; explicit seconds must be positive. */
     public Long getTtlSeconds() { return ttlSeconds; }
     public void setTtlSeconds(Long ttlSeconds) { this.ttlSeconds = ttlSeconds; }
 

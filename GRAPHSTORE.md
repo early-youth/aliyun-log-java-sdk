@@ -65,7 +65,8 @@ HTTP ACK; empty-property edge creation is outside this runnable example.
 It writes Alice, Bob and a knows edge, verifies exact query results, updates Alice's age from 30 to 31 using the complete property set,
 deletes the edge and vertices, and verifies empty results after each deletion. Values such
 as INT properties use decimal text; SDK compression is LZ4. Queries use Unix seconds and
-this example reads the full `[0,4294967295]` range with TimeState disabled and Base TTL=0.
+this example reads the full `[0,4294967295]` range with TimeState disabled and Base TTL=86400
+seconds (one day). Both CollectionSchemas initially inherit the Base TTL by leaving their TTL unset.
 
 It then replaces the person CollectionSchema with all original fields plus email and
 TTL=3600, reads it back, deletes both CollectionSchemas, deletes the Store and observes
@@ -121,19 +122,20 @@ compatibility overload. HTTP still uses `baseSchema`, `value`, `collectionSchema
 
 | Model | Fields and meaning |
 | --- | --- |
-| BaseSchema | Required timeStateEnable, nonnegative int64 ttlSeconds, indexEnable, vertexLayout and edgeLayout; commonFieldNames defaults to []; optional fullTextIndex. |
+| BaseSchema | Required timeStateEnable, positive int64 ttlSeconds, indexEnable, vertexLayout and edgeLayout; commonFieldNames defaults to []; optional fullTextIndex. |
 | VertexLayout | Fixed read-only name vertex; required label/id **field names**. Optional ck/pk/routeKey and keyIndexConfigs. |
 | EdgeLayout | Fixed read-only name edge; required source/target Endpoint and label field name; the same optional keys/index map. |
 | Endpoint | Required nonempty label/id field names. |
-| CollectionSchema | Required nonempty name/description, graphLayout (vertex/edge), collectionKeyValues and fields arrays. Optional int64 ttlSeconds. |
-| CollectionSchemaUpdate | Required name/description and complete replacement fields array; optional ttlSeconds. No layout or CK mutation fields. |
+| CollectionSchema | Required nonempty name/description, graphLayout (vertex/edge), collectionKeyValues and fields arrays. Optional positive int64 ttlSeconds. |
+| CollectionSchemaUpdate | Required name/description and complete replacement fields array; optional positive ttlSeconds. No layout or CK mutation fields. |
 | CollectionKeyValue | Required nonempty name and string value; value may be empty. These are logical constants, not arbitrary binary PB values. |
 | FieldSchema | Required nonempty name, type (STRING/INT/DOUBLE/BOOL) and IndexConfig. INT is signed int64. |
 | IndexConfig | Required enable; optional FullTextIndex or empty RangeIndex. Enabled with neither selects Exact. |
 | FullTextIndex | Required nonempty token string, caseSensitive and chn; optional nonempty optionToken string. |
 
-Base TTL 0 disables expiry. Collection TTL unset/null inherits BaseSchema; 0 disables expiry;
-positive values override in seconds. Update is replacement: unset/null TTL restores inheritance.
+Base TTL must be positive. Collection TTL unset/null inherits BaseSchema; an explicit value
+must be positive and overrides the Base TTL in seconds. Zero and negative TTLs are invalid.
+Update is replacement: unset/null TTL restores inheritance.
 Required `fields` and `collectionKeyValues` arrays may be empty. Optional keys are omitted when
 unset; explicit empty lists remain empty lists. Vertex defaults are ck=[label], pk=[id],
 routeKey=[label]; Edge defaults are ck=[source.label,label,target.label],

@@ -66,8 +66,9 @@ public class GraphStoreSample {
     }
 
     private void run() throws Exception {
-        // 本例关闭时态和索引、TTL=0；vl/vid 等指定写入字段名，person/knows 才是后续写入的标签值。
-        GraphStoreBaseSchema base = new GraphStoreBaseSchema(false, 0L, false,
+        // TTL 必须为正数，本例设置为 86400 秒（1 天），同时关闭时态和索引。
+        // vl/vid 等指定写入字段名，person/knows 才是后续写入的标签值。
+        GraphStoreBaseSchema base = new GraphStoreBaseSchema(false, 86400L, false,
                 new GraphStoreVertexLayout("vl", "vid"),
                 new GraphStoreEdgeLayout(new GraphStoreEndpoint("sl", "sid"), "el",
                         new GraphStoreEndpoint("tl", "tid")));
@@ -87,6 +88,7 @@ public class GraphStoreSample {
                     new GetGraphStoreBaseSchemaRequest(project, store));
             printResponse("GetGraphStoreBaseSchema", baseResponse);
             System.out.println("Vertex label field: " + baseResponse.getBaseSchema().getVertexLayout().getLabel());
+            System.out.println("Base TTL seconds: " + baseResponse.getBaseSchema().getTtlSeconds());
 
             createSchemas();
             GetGraphStoreCollectionSchemaResponse person = client.getGraphStoreCollectionSchema(
@@ -128,6 +130,7 @@ public class GraphStoreSample {
     }
 
     private void createSchemas() throws LogException {
+        // 两个 Collection 未显式设置 TTL，默认继承 BaseSchema 的 86400 秒。
         // CollectionSchema 通过标签键值匹配数据；这里为 vl=person 的顶点定义 name/age 属性。
         List<GraphStoreFieldSchema> fields = Arrays.asList(
                 new GraphStoreFieldSchema("name", GraphStoreFieldType.STRING, new GraphStoreIndexConfig(false)),
@@ -177,6 +180,7 @@ public class GraphStoreSample {
         List<GraphStoreFieldSchema> fields = new ArrayList<GraphStoreFieldSchema>(person.getFields());
         fields.add(new GraphStoreFieldSchema("email", GraphStoreFieldType.STRING, new GraphStoreIndexConfig(false)));
         GraphStoreCollectionSchemaUpdate update = new GraphStoreCollectionSchemaUpdate("person", "People with email", fields);
+        // 显式覆盖为 3600 秒（1 小时）；不设置或设为 null 则恢复继承 Base TTL。
         update.setTtlSeconds(3600L);
         printResponse("UpdateGraphStoreCollectionSchema", client.updateGraphStoreCollectionSchema(
                 new UpdateGraphStoreCollectionSchemaRequest(project, store, "person", update)));

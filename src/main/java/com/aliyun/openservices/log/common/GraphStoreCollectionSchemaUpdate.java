@@ -10,7 +10,7 @@ public class GraphStoreCollectionSchemaUpdate implements Serializable {
     private String name;
     /** Required nonempty replacement description. */
     private String description;
-    /** Null restores inheritance; zero disables expiry; this is replacement, not patch. */
+    /** Null restores inheritance; explicit seconds must be positive; replacement, not patch. */
     private Long ttlSeconds;
     /** Required complete replacement property array; an empty array is valid. */
     private List<GraphStoreFieldSchema> fields;
@@ -31,7 +31,7 @@ public class GraphStoreCollectionSchemaUpdate implements Serializable {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
 
-    /** Null restores inheritance; zero disables expiry; this is replacement, not patch. */
+    /** Null restores inheritance; explicit seconds must be positive; replacement, not patch. */
     public Long getTtlSeconds() { return ttlSeconds; }
     public void setTtlSeconds(Long ttlSeconds) { this.ttlSeconds = ttlSeconds; }
 

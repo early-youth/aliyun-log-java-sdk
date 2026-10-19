@@ -8,7 +8,7 @@ public class GraphStoreBaseSchema implements Serializable {
     private static final long serialVersionUID = 1L;
     /** Required time state setting. */
     private Boolean timeStateEnable;
-    /** Required nonnegative seconds; zero disables expiry. */
+    /** Required positive seconds; validated by the service. */
     private Long ttlSeconds;
     /** Optional common property names; unset values remain null. */
     private List<String> commonFieldNames;
@@ -35,7 +35,7 @@ public class GraphStoreBaseSchema implements Serializable {
     public Boolean getTimeStateEnable() { return timeStateEnable; }
     public void setTimeStateEnable(Boolean timeStateEnable) { this.timeStateEnable = timeStateEnable; }
 
-    /** Required nonnegative seconds; zero disables expiry. */
+    /** Required positive seconds; validated by the service. */
     public Long getTtlSeconds() { return ttlSeconds; }
     public void setTtlSeconds(Long ttlSeconds) { this.ttlSeconds = ttlSeconds; }
 
