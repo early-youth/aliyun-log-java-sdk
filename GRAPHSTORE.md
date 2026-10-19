@@ -47,6 +47,71 @@ static void configureGraphStore(LogService client, String project, String store)
 }
 ```
 
+## Runnable CRUD sample (Java 8)
+
+[`GraphStoreSample.java`](src/main/java/com/aliyun/openservices/log/sample/GraphStoreSample.java)
+is a complete `main` program using one native `Client` in an existing Project. It creates its
+own unique `graphstore-sample-*` Store, waits for READY, reads Store/BaseSchema, creates
+`person` and `knows` CollectionSchemas, and follows CollectionSchema pagination with
+`pageSize=1` and the returned opaque token.
+
+The sample constructs standard `Logs.LogGroup` messages directly in Java. Each Log carries
+`__layout__` (`vertex`/`edge`), `__method__` (`create`/`update`/`delete`), and the logical key
+and property fields defined by BaseSchema. The person properties are name (STRING) and age
+(INT); the edge has a weight (DOUBLE) property set to 1.0. The current Worker requires a
+nonempty property payload for non-DELETE events, so this sample includes a real edge
+property. An invalid event can cause its entire Worker package to be rejected after the
+HTTP ACK; empty-property edge creation is outside this runnable example.
+It writes Alice, Bob and a knows edge, verifies exact query results, updates Alice's age from 30 to 31 using the complete property set,
+deletes the edge and vertices, and verifies empty results after each deletion. Values such
+as INT properties use decimal text; SDK compression is LZ4. Queries use Unix seconds and
+this example reads the full `[0,4294967295]` range with TimeState disabled and Base TTL=0.
+
+It then replaces the person CollectionSchema with all original fields plus email and
+TTL=3600, reads it back, deletes both CollectionSchemas, deletes the Store and observes
+`404/GraphStoreNotExist`. Store management has no Update method; Split is outside this sample.
+No Project is created or deleted.
+
+Set `GRAPHSTORE_ENDPOINT` (including `https://`) and `GRAPHSTORE_PROJECT` to your test
+environment. Inject `ALIBABA_CLOUD_ACCESS_KEY_ID` and `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
+through your existing credential setup; do not put credentials in source or command arguments.
+From this SDK repository root:
+
+```bash
+mvn -DskipTests compile dependency:build-classpath \
+  -DincludeScope=runtime -Dmdep.outputFile=target/graphstore-sample-classpath.txt
+java -cp "target/classes:$(cat target/graphstore-sample-classpath.txt)" \
+  com.aliyun.openservices.log.sample.GraphStoreSample
+```
+
+The external and internal SDK repositories contain identical sample source and use their own
+Maven dependencies/classpath. Do not combine both SDKs in one classpath. The example uses V1;
+for V4, add the following before constructing `Client` (import
+`com.aliyun.openservices.log.http.signer.SignVersion`):
+
+```java
+configuration.setSignatureVersion(SignVersion.V4);
+configuration.setRegion("<your-signing-region>");
+```
+
+Expected output includes a unique Store name, each operation's request ID, rows
+`[[Alice, 30], [Bob, 28]]`, `[[Alice, Bob]]`, updated rows `[[Alice, 31], [Bob, 28]]`,
+empty results after deletions, the updated Schema fields/TTL, and
+`GraphStore sample passed; Store deletion confirmed.` The process exits nonzero on failure.
+
+READY is control-plane readiness. The sample has one explicit 65-second delay before its
+first write for the currently observed stg routing/Schema cache convergence; this is an
+environment workaround, not a general SDK readiness guarantee. Readiness/query/deletion
+polls allow 120 seconds plus an in-flight request (30-second request timeout); service
+errors fail immediately and mutations have no sample-level automatic replay. Query success
+requires the expected fields, exact rows and `truncated=false`; HTTP ACK alone is insufficient.
+
+After a successful Create, failures also attempt to delete this sample's Store, preserving
+both the original and cleanup error codes/request IDs. Create timeout/transport/5xx can
+leave an unknown result before that cleanup path is entered: use the printed Project/Store
+name to inspect and clean up as needed. Likewise inspect that name if cleanup fails. The
+Client always shuts down; credentials and raw SDK exception stacks are not printed.
+
 ## Logical schema contract
 
 All schema inputs and Get/List results are concrete models. This changes source compatibility:

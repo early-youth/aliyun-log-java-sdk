@@ -143,7 +143,7 @@ public class GraphStoreManagementE2ETool {
         } finally {
             client.shutdown();
         }
-        System.out.write(JSON.toJSONString(output, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue).getBytes("UTF-8"));
+        System.out.write(JSON.toJSONString(output).getBytes("UTF-8"));
         System.out.write('\n');
     }
 }
