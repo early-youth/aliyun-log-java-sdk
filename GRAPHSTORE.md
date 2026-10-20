@@ -200,7 +200,7 @@ Real decode/decompression errors, including checked LogException from LZ4Encoder
 BadResponse with HTTP/requestId/cause, without parser retries or partial rows.
 
 ACK does not promise visibility/durability; timeouts may leave mutation results unknown and
-retries may duplicate delivery. Callers own convergence polling. All 13 GraphStore methods
+retries may duplicate delivery. Callers own convergence polling. All 14 GraphStore methods
 stay on LogService; custom implementations must migrate. Each repository retains its own
 Maven coordinates/dependencies/version; no release is implied. Run native SDK tests with a
 hermetic selector and exclude functiontest sources from test compilation, then package with
@@ -208,3 +208,15 @@ hermetic selector and exclude functiontest sources from test compilation, then p
 
 查询结果保留 JSON 原生类型：数字、布尔、数组、对象、null 和字符串；路径为数组，实体为对象。
 业务属性中的 JSON 文本仍是字符串，不递归解析。Java 的 `Data.getValues()` 返回 `List<List<Object>>`，数字/对象/数组沿用 FastJSON 的原生类型。
+
+## BaseSchema update
+
+`UpdateGraphStoreBaseSchema` (Java: `updateGraphStoreBaseSchema`) sends
+`PUT /graphstore/{storeName}/baseschema` with a `GraphStoreBaseSchemaUpdate` under `value`.
+The model contains positive `ttlSeconds`, `indexEnable`, optional `fullTextIndex`, and
+`graphLayouts` containing one vertex and one edge `GraphStoreGraphLayoutUpdate`. Each
+layout has only `name` and a required `keyIndexConfigs` map. Use an empty map to clear
+explicit key index settings; false is preserved. In Go, use a non-nil empty map.
+This is complete replacement of mutable settings, without structural mutation or CAS.
+The service validates keys, reserved names, TTL and index combinations. Success has
+an empty body and does not promise immediate convergence or historical reindexing.

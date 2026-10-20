@@ -118,6 +118,8 @@ public class GraphStoreManagementE2ETool {
                     body.put("collectionSchemas", r.getCollectionSchemas());
                     if (r.getNextPageToken() != null && !r.getNextPageToken().isEmpty()) body.put("nextPageToken", r.getNextPageToken()); break;
                 }
+                case "UpdateGraphStoreBaseSchema":
+                    response = client.updateGraphStoreBaseSchema(new UpdateGraphStoreBaseSchemaRequest(project, name, p.getObject("body_json", com.aliyun.openservices.log.common.GraphStoreBaseSchemaUpdate.class))); break;
                 case "UpdateGraphStoreCollectionSchema":
                     response = client.updateGraphStoreCollectionSchema(new UpdateGraphStoreCollectionSchemaRequest(project, name, p.getString("collection_schema_name"), p.getObject("body_json", com.aliyun.openservices.log.common.GraphStoreCollectionSchemaUpdate.class))); break;
                 case "DeleteGraphStoreCollectionSchema":

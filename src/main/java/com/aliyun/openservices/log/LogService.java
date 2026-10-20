@@ -30,6 +30,7 @@ public interface LogService {
     CreateGraphStoreCollectionSchemaResponse createGraphStoreCollectionSchema(CreateGraphStoreCollectionSchemaRequest request) throws LogException;
     GetGraphStoreCollectionSchemaResponse getGraphStoreCollectionSchema(GetGraphStoreCollectionSchemaRequest request) throws LogException;
     ListGraphStoreCollectionSchemasResponse listGraphStoreCollectionSchemas(ListGraphStoreCollectionSchemasRequest request) throws LogException;
+    UpdateGraphStoreBaseSchemaResponse updateGraphStoreBaseSchema(UpdateGraphStoreBaseSchemaRequest request) throws LogException;
     UpdateGraphStoreCollectionSchemaResponse updateGraphStoreCollectionSchema(UpdateGraphStoreCollectionSchemaRequest request) throws LogException;
     DeleteGraphStoreCollectionSchemaResponse deleteGraphStoreCollectionSchema(DeleteGraphStoreCollectionSchemaRequest request) throws LogException;
 

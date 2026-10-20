@@ -6694,6 +6694,16 @@ public class Client implements LogService {
     }
 
     @Override
+    public UpdateGraphStoreBaseSchemaResponse updateGraphStoreBaseSchema(UpdateGraphStoreBaseSchemaRequest request) throws LogException {
+        CodingUtils.assertParameterNotNull(request, "request");
+        CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");
+        validateGraphStoreName(request.getStoreName());
+        CodingUtils.assertParameterNotNull(request.getBaseSchema(), "baseSchema");
+        ResponseMessage response = sendJson(request, graphStoreSchemaBody(request));
+        return new UpdateGraphStoreBaseSchemaResponse(response.getHeaders());
+    }
+
+    @Override
     public UpdateGraphStoreCollectionSchemaResponse updateGraphStoreCollectionSchema(UpdateGraphStoreCollectionSchemaRequest request) throws LogException {
         CodingUtils.assertParameterNotNull(request, "request");
         CodingUtils.assertStringNotNullOrEmpty(request.GetProject(), "project");

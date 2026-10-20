@@ -74,6 +74,33 @@ public class GraphStoreManagementTest {
     }
 
     @Test
+    public void baseSchemaUpdatePreservesFalseAndEmptyMaps() throws Exception {
+        CapturingClient client = new CapturingClient();
+        GraphStoreBaseSchemaUpdate update = new GraphStoreBaseSchemaUpdate();
+        update.setTtlSeconds(Long.MAX_VALUE);
+        update.setIndexEnable(false);
+        GraphStoreGraphLayoutUpdate vertex = new GraphStoreGraphLayoutUpdate();
+        vertex.setName(GraphStoreLayoutType.VERTEX);
+        vertex.setKeyIndexConfigs(Collections.<String, GraphStoreIndexConfig>emptyMap());
+        GraphStoreGraphLayoutUpdate edge = new GraphStoreGraphLayoutUpdate();
+        edge.setName(GraphStoreLayoutType.EDGE);
+        edge.setKeyIndexConfigs(Collections.<String, GraphStoreIndexConfig>emptyMap());
+        update.setGraphLayouts(Arrays.asList(vertex, edge));
+        LogService service = client;
+        assertEquals("request-id", service.updateGraphStoreBaseSchema(
+                new UpdateGraphStoreBaseSchemaRequest("project", "store", update)).GetRequestId());
+        client.check(HttpMethod.PUT, "/graphstore/store/baseschema");
+        JSONObject value = client.jsonBody().getJSONObject("value");
+        assertEquals(3, value.size());
+        assertEquals(Long.MAX_VALUE, value.getLongValue("ttlSeconds"));
+        assertEquals(Boolean.FALSE, value.get("indexEnable"));
+        assertEquals("vertex", value.getJSONArray("graphLayouts").getJSONObject(0).getString("name"));
+        assertEquals("edge", value.getJSONArray("graphLayouts").getJSONObject(1).getString("name"));
+        assertTrue(value.getJSONArray("graphLayouts").getJSONObject(0).getJSONObject("keyIndexConfigs").isEmpty());
+        assertTrue(value.getJSONArray("graphLayouts").getJSONObject(1).getJSONObject("keyIndexConfigs").isEmpty());
+    }
+
+    @Test
     public void readsKeepIntegerPrecisionAndTypedSchemas() throws Exception {
         CapturingClient client = new CapturingClient();
         client.responseBody = STORE_WITH_SHARDS;
