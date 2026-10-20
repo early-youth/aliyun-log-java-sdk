@@ -2,6 +2,7 @@ package com.aliyun.openservices.log.functiontest;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.internal.ErrorCodes;
 import com.aliyun.openservices.log.internal.GraphStoreSchemaCodec;
@@ -143,7 +144,10 @@ public class GraphStoreManagementE2ETool {
         } finally {
             client.shutdown();
         }
-        System.out.write(JSON.toJSONString(output).getBytes("UTF-8"));
+        // 查询对象中的 null 属性也是结果的一部分，不能在桥接输出时省略。
+        String encoded = "GetGraphStoreData".equals(p.getString("action"))
+                ? JSON.toJSONString(output, SerializerFeature.WriteMapNullValue) : JSON.toJSONString(output);
+        System.out.write(encoded.getBytes("UTF-8"));
         System.out.write('\n');
     }
 }

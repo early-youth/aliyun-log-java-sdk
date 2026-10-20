@@ -86,13 +86,17 @@ java -cp "target/classes:$(cat target/graphstore-sample-classpath.txt)" \
 ```
 
 The external and internal SDK repositories contain identical sample source and use their own
-Maven dependencies/classpath. Do not combine both SDKs in one classpath. The example uses V1;
-for V4, add the following before constructing `Client` (import
-`com.aliyun.openservices.log.http.signer.SignVersion`):
+Maven dependencies/classpath. Do not combine both SDKs in one classpath.
+`GRAPHSTORE_SIGNATURE_VERSION` defaults to `v1` and accepts only `v1` or `v4`.
+V4 requires an explicit `GRAPHSTORE_REGION`; the sample does not infer it from the endpoint.
+Run both versions without changing source:
 
-```java
-configuration.setSignatureVersion(SignVersion.V4);
-configuration.setRegion("<your-signing-region>");
+```bash
+GRAPHSTORE_SIGNATURE_VERSION=v1 java -cp "target/classes:$(cat target/graphstore-sample-classpath.txt)" \
+  com.aliyun.openservices.log.sample.GraphStoreSample
+GRAPHSTORE_SIGNATURE_VERSION=v4 GRAPHSTORE_REGION=cn-wulanchabu-stg-pg2 \
+  java -cp "target/classes:$(cat target/graphstore-sample-classpath.txt)" \
+  com.aliyun.openservices.log.sample.GraphStoreSample
 ```
 
 Expected output includes a unique Store name, each operation's request ID, rows
@@ -201,3 +205,6 @@ stay on LogService; custom implementations must migrate. Each repository retains
 Maven coordinates/dependencies/version; no release is implied. Run native SDK tests with a
 hermetic selector and exclude functiontest sources from test compilation, then package with
 -Dmaven.test.skip=true. E2E tools are outside this refinement and need separate migration.
+
+查询结果保留 JSON 原生类型：数字、布尔、数组、对象、null 和字符串；路径为数组，实体为对象。
+业务属性中的 JSON 文本仍是字符串，不递归解析。Java 的 `Data.getValues()` 返回 `List<List<Object>>`，数字/对象/数组沿用 FastJSON 的原生类型。

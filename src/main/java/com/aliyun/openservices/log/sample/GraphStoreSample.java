@@ -4,6 +4,7 @@ import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.*;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
+import com.aliyun.openservices.log.http.signer.SignVersion;
 import com.aliyun.openservices.log.request.*;
 import com.aliyun.openservices.log.response.*;
 
@@ -45,11 +46,21 @@ public class GraphStoreSample {
         configuration.setSocketTimeout(30_000);
         configuration.setRequestTimeoutEnabled(true);
         configuration.setRequestTimeout(30_000);
-        // 默认使用 V1；V4 需在创建 Client 前设置 setSignatureVersion(SignVersion.V4) 和 setRegion(region)。
+        String version = System.getenv("GRAPHSTORE_SIGNATURE_VERSION");
+        if (version == null || version.isEmpty()) version = "v1";
+        if (!"v1".equals(version) && !"v4".equals(version)) {
+            throw new IllegalArgumentException("GRAPHSTORE_SIGNATURE_VERSION must be v1 or v4");
+        }
+        // V4 的 region 是签名输入，不能根据域名猜测；必须在创建 Client 前配置。
+        if ("v4".equals(version)) {
+            configuration.setSignatureVersion(SignVersion.V4);
+            configuration.setRegion(requiredEnv("GRAPHSTORE_REGION"));
+        }
         // 全流程复用同一个 Client 和连接池，并在 finally 中关闭。
         Client client = new Client(endpoint, accessKeyId, accessKeySecret, configuration);
         GraphStoreSample sample = new GraphStoreSample(client, project);
         System.out.println("Sample resources: project=" + project + ", store=" + sample.store);
+        System.out.println("Signing: version=" + version);
         int exitCode = 0;
         try {
             sample.run();
@@ -158,14 +169,14 @@ public class GraphStoreSample {
                 log("vertex", "create", "vl", "person", "vid", BOB_ID, "name", "Bob", "age", "28"),
                 log("edge", "create", "sl", "person", "sid", ALICE_ID, "el", "knows", "tl", "person", "tid", BOB_ID, "weight", "1.0"));
         waitForRows(PERSON_QUERY, Arrays.asList("name", "age"),
-                Arrays.asList(Arrays.asList("Alice", "30"), Arrays.asList("Bob", "28")));
+                Arrays.asList(Arrays.<Object>asList("Alice", 30), Arrays.<Object>asList("Bob", 28)));
         waitForRows(EDGE_QUERY, Arrays.asList("source", "target"),
                 Collections.singletonList(Arrays.asList("Alice", "Bob")));
 
         // 实体 update 携带完整属性集合：只改 age 时仍需保留 name。
         write(log("vertex", "update", "vl", "person", "vid", ALICE_ID, "name", "Alice", "age", "31"));
         waitForRows(PERSON_QUERY, Arrays.asList("name", "age"),
-                Arrays.asList(Arrays.asList("Alice", "31"), Arrays.asList("Bob", "28")));
+                Arrays.asList(Arrays.<Object>asList("Alice", 31), Arrays.<Object>asList("Bob", 28)));
 
         // delete 只需标识实体的键字段；本例先删边，再删顶点，并分别查询确认。
         write(log("edge", "delete", "sl", "person", "sid", ALICE_ID, "el", "knows", "tl", "person", "tid", BOB_ID));
@@ -230,7 +241,7 @@ public class GraphStoreSample {
         throw new IllegalStateException("Timed out waiting for Store READY");
     }
 
-    private void waitForRows(String query, List<String> header, List<List<String>> expected) throws Exception {
+    private void waitForRows(String query, List<String> header, List<? extends List<?>> expected) throws Exception {
         // 写入 ACK 不保证查询立即可见；有限轮询，严格核对列名、行值及 truncated=false。
         long deadline = System.nanoTime() + WAIT_NANOS;
         String observed = "no response";

@@ -95,6 +95,33 @@ public class GraphStoreDataTest {
     }
 
     @Test
+    public void structuredValuesRemainNativeForBothSignatures() throws Exception {
+        for (SignVersion version : new SignVersion[]{SignVersion.V1, SignVersion.V4}) {
+            ClientConfiguration config = new ClientConfiguration();
+            config.setRegion("cn-hangzhou");
+            config.setSignatureVersion(version);
+            try (Wire wire = new Wire(config, null)) {
+                JSONObject value = JSONObject.parseObject(ROWS);
+                String cells = "[9223372036854775807,true,1.25,null,\"\",[1,null],"
+                        + "{\"value_base64\":\"business\"},\"[1,2]\",\"雪\\u0000tail\"]";
+                value.getJSONObject("data").put("values", JSONObject.parseArray("[" + cells + "]"));
+                wire.responseBody = value.toJSONString().getBytes(StandardCharsets.UTF_8);
+                java.util.List<Object> row = wire.client.getGraphStoreData(QUERY).getData().getValues().get(0);
+                wire.check("query", Consts.CONST_SLS_JSON, version, null);
+                assertEquals(Long.MAX_VALUE, row.get(0));
+                assertEquals(Boolean.TRUE, row.get(1));
+                assertEquals(new java.math.BigDecimal("1.25"), row.get(2));
+                assertNull(row.get(3));
+                assertEquals("", row.get(4));
+                assertEquals(Arrays.asList(1, null), row.get(5));
+                assertEquals("business", ((Map<?, ?>) row.get(6)).get("value_base64"));
+                assertEquals("[1,2]", row.get(7));
+                assertEquals("雪\u0000tail", row.get(8));
+            }
+        }
+    }
+
+    @Test
     public void closedInt64TimeRangeAndDefaultsAreSentExactly() throws Exception {
         try (Wire wire = new Wire(new ClientConfiguration(), null)) {
             for (GetGraphStoreDataRequest request : new GetGraphStoreDataRequest[]{
@@ -211,11 +238,11 @@ public class GraphStoreDataTest {
                 wire.client.getGraphStoreData(QUERY);
             }
             wire.responseBody = ROWS.replace("null,\"\"", "42,\"\"").getBytes(StandardCharsets.UTF_8);
-            assertEquals("42", wire.client.getGraphStoreData(QUERY).getData().getValues().get(0).get(0));
+            assertEquals(42, wire.client.getGraphStoreData(QUERY).getData().getValues().get(0).get(0));
             JSONObject value = JSONObject.parseObject(ROWS);
             value.getJSONObject("data").put("values", JSONObject.parseArray("[[null,\"\",42,1.25,true,{\"x\":1},[1,null]]]"));
             wire.responseBody = value.toJSONString().getBytes(StandardCharsets.UTF_8);
-            assertEquals(Arrays.asList(null, "", "42", "1.25", "true", "{\"x\":1}", "[1,null]"),
+            assertEquals(JSONObject.parseArray("[null,\"\",42,1.25,true,{\"x\":1},[1,null]]").toJavaList(Object.class),
                     wire.client.getGraphStoreData(QUERY).getData().getValues().get(0));
         }
     }

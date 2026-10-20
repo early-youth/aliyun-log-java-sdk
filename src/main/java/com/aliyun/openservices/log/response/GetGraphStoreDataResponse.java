@@ -16,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Public row response; cells use the same FastJSON string conversion as LogStore queries. */
+/** Public row response preserving JSON cell types, including nested arrays and objects. */
 public class GetGraphStoreDataResponse extends Response {
     private static final long serialVersionUID = 1L;
     private final Data data;
@@ -34,17 +34,17 @@ public class GetGraphStoreDataResponse extends Response {
     public static class Data implements Serializable {
         private static final long serialVersionUID = 1L;
         private final List<String> fields;
-        private final List<List<String>> values;
+        private final List<List<Object>> values;
 
         private Data(JSONObject value) {
             fields = field(value, "fields", JSONArray.class).toJavaList(String.class);
             JSONArray rows = field(value, "values", JSONArray.class);
-            values = new ArrayList<List<String>>(rows.size());
-            for (int i = 0; i < rows.size(); i++) values.add(rows.getJSONArray(i).toJavaList(String.class));
+            values = new ArrayList<List<Object>>(rows.size());
+            for (int i = 0; i < rows.size(); i++) values.add(rows.getJSONArray(i).toJavaList(Object.class));
         }
 
         public List<String> getFields() { return fields; }
-        public List<List<String>> getValues() { return values; }
+        public List<List<Object>> getValues() { return values; }
     }
 
     public static class Meta implements Serializable {
