@@ -109,7 +109,7 @@ first write for the currently observed stg routing/Schema cache convergence; thi
 environment workaround, not a general SDK readiness guarantee. Readiness/query/deletion
 polls allow 120 seconds plus an in-flight request (30-second request timeout); service
 errors fail immediately and mutations have no sample-level automatic replay. Query success
-requires the expected fields, exact rows and `truncated=false`; HTTP ACK alone is insufficient.
+requires the expected fields, exact rows and `status=success`; HTTP ACK alone is insufficient.
 
 After a successful Create, failures also attempt to delete this sample's Store, preserving
 both the original and cleanup error codes/request IDs. Create timeout/transport/5xx can
@@ -181,7 +181,7 @@ write.setCompressType(Consts.CompressType.LZ4);
 PostGraphStoreDataResponse ack = client.postGraphStoreData(write);
 GetGraphStoreDataResponse rows = client.getGraphStoreData(
     new GetGraphStoreDataRequest(project, storeName, "MATCH (n) RETURN n", 1700000000L, 1700001000L));
-// rows.getData().getFields(), getValues(), rows.getMeta(), rows.GetRequestId().
+// rows.getData().getFields(), getValues(), rows.getStatus(), rows.getWarnings(), rows.getStats() (nullable), rows.GetRequestId().
 ```
 
 Standard LogGroup serialization, exact bytes, checkBodyRawSize and native NONE/LZ4/ZSTD/GZIP
@@ -191,8 +191,9 @@ budgets are unchanged. Query start/end are long with closed [start,end], 0 <= st
 the three-argument constructor defaults to [0,4294967295]. Session is optional and opaque.
 
 Query performs ordinary UTF-8 conversion and one FastJSON parse with DisableSpecialKeyDetect.
-Additional result fields and unequal row widths are accepted. Required data/meta structures
-remain required; cells/elapsedMs/truncated use native FastJSON getters, as LogStore does.
+Additional result fields and unequal row widths are accepted. Absent/null data, fields, values,
+status and warnings stay null. Cells and stats use native FastJSON conversions; elapsedMs defaults
+to zero, rowCount/peakMemoryBytes use BigInteger without additional range validation.
 No private lexer, JSONValidator, strict UTF-8 scan or additional integer conversion policy is
 used for query values. Responses support uncompressed/LZ4 via LZ4Encoder; raw size must fit
 nonnegative int, with no GraphStore 256 MiB cap or extra compressed-input consumption check.
@@ -204,10 +205,25 @@ retries may duplicate delivery. Callers own convergence polling. All 14 GraphSto
 stay on LogService; custom implementations must migrate. Each repository retains its own
 Maven coordinates/dependencies/version; no release is implied. Run native SDK tests with a
 hermetic selector and exclude functiontest sources from test compilation, then package with
--Dmaven.test.skip=true. E2E tools are outside this refinement and need separate migration.
+-Dmaven.test.skip=true. The native E2E bridge exposes the same query outcome fields.
 
-查询结果保留 JSON 原生类型：数字、布尔、数组、对象、null 和字符串；路径为数组，实体为对象。
-业务属性中的 JSON 文本仍是字符串，不递归解析。Java 的 `Data.getValues()` 返回 `List<List<Object>>`，数字/对象/数组沿用 FastJSON 的原生类型。
+查询请求可设置 `resultFormat`：`json` 返回原生 JSON 值，`typed_json` 返回带标签的值；
+省略时服务端默认 `json`。使用 `request.setResultFormat("typed_json")` 显式选择 Typed；
+样例已显式选择 Typed。SDK 仅序列化参数，合法取值由 Front 校验，两种格式共用响应模型。
+Typed 模式原样保留每个值的 `$type/_value` 和嵌套结构。
+例如整数 42 是 `{"$type":"Integer","_value":"42"}`，字符串 42 使用 `String` 标签；
+Null 使用 `{"$type":"Null","_value":null}`。List、Map、Node、Relationship、Path 和 temporal
+沿用底层标签；未知标签同样透传，由消费者按显式类型读取，不根据文本或对象形状猜测。
+Java 的 `Data.getValues()` 返回 `List<List<Object>>`，标签和 payload 沿用 FastJSON 的原生对象/数组/字符串。
+
+Query models expose `status`, `warnings`, and `stats` with `rowCount/elapsedMs/peakMemoryBytes`.
+The SDK passes status strings through without enum or error-field combination checks. Missing/null
+fields use native defaults; stats may be null, empty or partial, and warnings may be null or empty. Statistics require session `stats_enable=true`
+and available execution statistics; absent stats stay absent. HTTP 200 with `incomplete` is partial
+and must not pass a caller's complete-result check. The old query Meta model is removed.
+Query HTTP errors carry `status=error`, `error_code` and `error`; the existing SDK error type
+retains the public code/message, HTTP status and request ID. Ordinary LogStore errors keep their
+existing format and retry behavior.
 
 ## BaseSchema update
 

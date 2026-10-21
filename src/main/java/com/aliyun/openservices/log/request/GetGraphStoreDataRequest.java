@@ -8,6 +8,7 @@ public class GetGraphStoreDataRequest extends Request {
     private final long start;
     private final long end;
     private String session;
+    private String resultFormat;
 
     public GetGraphStoreDataRequest(String project, String storeName, String query) {
         this(project, storeName, query, 0, 0xffffffffL);
@@ -27,4 +28,6 @@ public class GetGraphStoreDataRequest extends Request {
     public long getEnd() { return end; }
     public String getSession() { return session; }
     public void setSession(String session) { this.session = session; }
+    public String getResultFormat() { return resultFormat; }
+    public void setResultFormat(String resultFormat) { this.resultFormat = resultFormat; }
 }

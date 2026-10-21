@@ -66,13 +66,15 @@ public class GraphStoreManagementE2ETool {
                     GetGraphStoreDataRequest request = new GetGraphStoreDataRequest(project, name, p.getString("query"),
                             p.getLongValue("start"), p.getLongValue("end"));
                     request.setSession(p.getString("session"));
+                    request.setResultFormat(p.getString("result_format"));
                     GetGraphStoreDataResponse r = client.getGraphStoreData(request);
                     response = r;
-                    output.put("header", r.getData().getFields()); output.put("data", r.getData().getValues());
-                    JSONObject meta = new JSONObject(true);
-                    meta.put("row_count", r.getData().getValues().size()); meta.put("truncated", r.getMeta().isTruncated());
-                    meta.put("elapsed_ms", r.getMeta().getElapsedMs()); meta.put("warnings", r.getMeta().getWarnings());
-                    output.put("meta", meta);
+                    if (r.getData() != null) {
+                        output.put("header", r.getData().getFields()); output.put("data", r.getData().getValues());
+                    }
+                    output.put("status", r.getStatus());
+                    if (r.getWarnings() != null) output.put("warnings", r.getWarnings());
+                    if (r.getStats() != null) output.put("stats", r.getStats());
                     break;
                 }
                 case "CreateGraphStore": {
@@ -137,6 +139,7 @@ public class GraphStoreManagementE2ETool {
                 if (error.getHttpCode() <= 0) throw error;
                 output.put("http_status", error.getHttpCode()); output.put("request_id", error.getRequestId());
                 output.put("error_code", error.getErrorCode());
+                output.put("error_message", error.GetErrorMessage());
             }
             output.put("body", body);
         } catch (IllegalArgumentException error) {

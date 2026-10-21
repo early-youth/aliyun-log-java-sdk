@@ -2339,10 +2339,12 @@ public class Client implements LogService {
 
 	void ErrorCheck(JSONObject object, String requestId, int httpCode, String response)
 			throws LogException {
-		if (object.containsKey(Consts.CONST_ERROR_CODE)) {
+		boolean queryError = "error".equals(object.get("status"));
+		if (queryError ? object.get("error_code") instanceof String && object.get("error") instanceof String
+				: object.containsKey(Consts.CONST_ERROR_CODE)) {
 			try {
-				String errorCode = object.getString(Consts.CONST_ERROR_CODE);
-				String errorMessage = object.getString(Consts.CONST_ERROR_MESSAGE);
+				String errorCode = object.getString(queryError ? "error_code" : Consts.CONST_ERROR_CODE);
+				String errorMessage = object.getString(queryError ? "error" : Consts.CONST_ERROR_MESSAGE);
 				throw new LogException(httpCode, errorCode, errorMessage, requestId, response);
 			} catch (JSONException e) {
 				throw new LogException(httpCode, "InvalidErrorResponse",
@@ -6497,6 +6499,7 @@ public class Client implements LogService {
         query.put("start", request.getStart());
         query.put("end", request.getEnd());
         if (request.getSession() != null) query.put("session", request.getSession());
+        if (request.getResultFormat() != null) query.put("resultFormat", request.getResultFormat());
         byte[] body = encodeToUtf8(query.toJSONString());
         Map<String, String> headers = GetCommonHeadPara(request.GetProject());
         headers.put(Consts.CONST_CONTENT_TYPE, Consts.CONST_SLS_JSON);

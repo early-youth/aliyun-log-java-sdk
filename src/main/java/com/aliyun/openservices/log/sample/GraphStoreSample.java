@@ -1,5 +1,6 @@
 package com.aliyun.openservices.log.sample;
 
+import com.alibaba.fastjson.JSONObject;
 import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.*;
 import com.aliyun.openservices.log.exception.LogException;
@@ -169,14 +170,14 @@ public class GraphStoreSample {
                 log("vertex", "create", "vl", "person", "vid", BOB_ID, "name", "Bob", "age", "28"),
                 log("edge", "create", "sl", "person", "sid", ALICE_ID, "el", "knows", "tl", "person", "tid", BOB_ID, "weight", "1.0"));
         waitForRows(PERSON_QUERY, Arrays.asList("name", "age"),
-                Arrays.asList(Arrays.<Object>asList("Alice", 30), Arrays.<Object>asList("Bob", 28)));
+                Arrays.asList(Arrays.asList(typedValue("String", "Alice"), typedValue("Integer", "30")), Arrays.asList(typedValue("String", "Bob"), typedValue("Integer", "28"))));
         waitForRows(EDGE_QUERY, Arrays.asList("source", "target"),
-                Collections.singletonList(Arrays.asList("Alice", "Bob")));
+                Collections.singletonList(Arrays.asList(typedValue("String", "Alice"), typedValue("String", "Bob"))));
 
         // 实体 update 携带完整属性集合：只改 age 时仍需保留 name。
         write(log("vertex", "update", "vl", "person", "vid", ALICE_ID, "name", "Alice", "age", "31"));
         waitForRows(PERSON_QUERY, Arrays.asList("name", "age"),
-                Arrays.asList(Arrays.<Object>asList("Alice", 31), Arrays.<Object>asList("Bob", 28)));
+                Arrays.asList(Arrays.asList(typedValue("String", "Alice"), typedValue("Integer", "31")), Arrays.asList(typedValue("String", "Bob"), typedValue("Integer", "28"))));
 
         // delete 只需标识实体的键字段；本例先删边，再删顶点，并分别查询确认。
         write(log("edge", "delete", "sl", "person", "sid", ALICE_ID, "el", "knows", "tl", "person", "tid", BOB_ID));
@@ -241,18 +242,24 @@ public class GraphStoreSample {
         throw new IllegalStateException("Timed out waiting for Store READY");
     }
 
+    private static JSONObject typedValue(String type, Object value) {
+        return new JSONObject().fluentPut("$type", type).fluentPut("_value", value);
+    }
+
     private void waitForRows(String query, List<String> header, List<? extends List<?>> expected) throws Exception {
-        // 写入 ACK 不保证查询立即可见；有限轮询，严格核对列名、行值及 truncated=false。
+        // 写入 ACK 不保证查询立即可见；有限轮询，严格核对列名、行值及 status=success。
         long deadline = System.nanoTime() + WAIT_NANOS;
         String observed = "no response";
+        // start/end 单位为 Unix 秒，本例查询完整的 uint32 时间范围。
+        GetGraphStoreDataRequest request = new GetGraphStoreDataRequest(project, store, query, 0L, 0xffffffffL);
+        request.setResultFormat("typed_json");
         do {
-            // start/end 单位为 Unix 秒，本例查询完整的 uint32 时间范围。
-            GetGraphStoreDataResponse response = client.getGraphStoreData(
-                    new GetGraphStoreDataRequest(project, store, query, 0L, 0xffffffffL));
+            GetGraphStoreDataResponse response = client.getGraphStoreData(request);
             printResponse("GetGraphStoreData", response);
-            observed = "fields=" + response.getData().getFields() + ", rows=" + response.getData().getValues()
-                    + ", truncated=" + response.getMeta().isTruncated();
-            if (!response.getMeta().isTruncated() && header.equals(response.getData().getFields())
+            observed = "data=" + JSONObject.toJSONString(response.getData())
+                    + ", status=" + response.getStatus();
+            if ("success".equals(response.getStatus()) && response.getData() != null
+                    && header.equals(response.getData().getFields())
                     && expected.equals(response.getData().getValues())) {
                 System.out.println("Query: " + query);
                 System.out.println("Rows: " + response.getData().getValues());

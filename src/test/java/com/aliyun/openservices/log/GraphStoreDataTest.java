@@ -39,13 +39,56 @@ import static org.junit.Assert.*;
 public class GraphStoreDataTest {
     private static final String ROWS = "{\"data\":{\"fields\":[\"a\",\"b\",\"c\"],"
             + "\"values\":[[null,\"\",\"雪\\u0000\"],[\"9223372036854775808\",\"[1,2]\",\"true\"]]},"
-            + "\"meta\":{\"elapsedMs\":-9223372036854775808,\"truncated\":true,\"warnings\":[\"雪\"]}}";
+            + "\"status\":\"incomplete\",\"stats\":{\"rowCount\":2,\"elapsedMs\":-9223372036854775808,\"peakMemoryBytes\":18446744073709551615},\"warnings\":[\"雪\"]}";
     private static final GetGraphStoreDataRequest QUERY = new GetGraphStoreDataRequest("project", "store", "MATCH (n) RETURN n", 10, 20);
 
     private static Logs.LogGroup group(byte[] value) {
         return Logs.LogGroup.newBuilder().addLogs(Logs.Log.newBuilder().setTime(1)
                 .addContents(Logs.Log.Content.newBuilder().setKey("binary").setValueBytes(ByteString.copyFrom(value))))
                 .build();
+    }
+
+    @Test
+    public void typedJSONPreservesLabelsAndNestedPayloads() throws Exception {
+        String body = "{\"status\":\"success\",\"data\":{\"fields\":[\"v\"],\"values\":[[{\"$type\":\"Integer\",\"_value\":\"9223372036854775807\"}],[{\"$type\":\"Integer\",\"_value\":\"-9223372036854775808\"}],[{\"$type\":\"Float\",\"_value\":\"1.0\"}],[{\"$type\":\"String\",\"_value\":\"1.0\"}],[{\"$type\":\"Float\",\"_value\":\"NaN\"}],[{\"$type\":\"Boolean\",\"_value\":true}],[{\"$type\":\"Null\",\"_value\":null}],[{\"$type\":\"String\",\"_value\":\"\"}],[{\"$type\":\"String\",\"_value\":\"雪\\u0000tail\"}],[{\"$type\":\"List\",\"_value\":[{\"$type\":\"Integer\",\"_value\":\"9007199254740993\"},{\"$type\":\"Null\",\"_value\":null}]}],[{\"$type\":\"Map\",\"_value\":{\"$type\":{\"$type\":\"String\",\"_value\":\"business\"},\"_value\":{\"$type\":\"String\",\"_value\":\"[1,2]\"}}}],[{\"$type\":\"Node\",\"_value\":{\"_element_id\":\"a\",\"_labels\":[\"N\"],\"_properties\":{\"n\":{\"$type\":\"Integer\",\"_value\":\"9223372036854775807\"}}}}],[{\"$type\":\"Relationship\",\"_value\":{\"_element_id\":\"r\",\"_start_node_element_id\":\"a\",\"_end_node_element_id\":\"b\",\"_type\":\"R\",\"_properties\":{}}}],[{\"$type\":\"Path\",\"_value\":[{\"$type\":\"Node\",\"_value\":{\"_element_id\":\"a\",\"_labels\":[\"N\"],\"_properties\":{\"n\":{\"$type\":\"Integer\",\"_value\":\"9223372036854775807\"}}}},{\"$type\":\"Relationship\",\"_value\":{\"_element_id\":\"r\",\"_start_node_element_id\":\"a\",\"_end_node_element_id\":\"b\",\"_type\":\"R\",\"_properties\":{}}},{\"$type\":\"Node\",\"_value\":{\"_element_id\":\"b\",\"_labels\":[],\"_properties\":{}}}]}],[{\"$type\":\"Date\",\"_value\":\"2026-10-21\"}],[{\"$type\":\"Point\",\"_value\":\"SRID=7203;POINT (1 2)\"}],[{\"$type\":\"FutureType\",\"_value\":{\"opaque\":[1,null]}}]]}}";
+        for (SignVersion version : new SignVersion[]{SignVersion.V1, SignVersion.V4}) {
+            ClientConfiguration config = new ClientConfiguration();
+            config.setSignatureVersion(version);
+            config.setRegion("cn-hangzhou");
+            try (Wire wire = new Wire(config, null)) {
+                wire.responseBody = body.getBytes(StandardCharsets.UTF_8);
+                GetGraphStoreDataRequest request = new GetGraphStoreDataRequest("project", "store", "RETURN n");
+                request.setResultFormat("typed_json");
+                GetGraphStoreDataResponse result = wire.client.getGraphStoreData(request);
+                assertEquals(JSONObject.parseObject(body).getJSONObject("data").getJSONArray("values"),
+                        JSONObject.toJSON(result.getData().getValues()));
+                assertEquals("9223372036854775807", ((Map<?, ?>) result.getData().getValues().get(0).get(0)).get("_value"));
+                assertEquals("雪\u0000tail", ((Map<?, ?>) result.getData().getValues().get(8).get(0)).get("_value"));
+            }
+        }
+    }
+
+    @Test
+    public void queryResultFormatWire() throws Exception {
+        for (SignVersion version : new SignVersion[]{SignVersion.V1, SignVersion.V4}) {
+            ClientConfiguration config = new ClientConfiguration();
+            config.setSignatureVersion(version);
+            config.setRegion("cn-hangzhou");
+            try (Wire wire = new Wire(config, null)) {
+                for (String format : new String[]{null, "json", "typed_json", "future-format"}) {
+                    GetGraphStoreDataRequest request = new GetGraphStoreDataRequest("project", "store", "RETURN 42 AS n");
+                    request.setResultFormat(format);
+                    String cell = "typed_json".equals(format) ? "{\"$type\":\"Integer\",\"_value\":\"42\"}" : "42";
+                    wire.responseBody = ("{\"status\":\"success\",\"data\":{\"fields\":[\"n\"],\"values\":[[" + cell + "]]}}").getBytes(StandardCharsets.UTF_8);
+                    GetGraphStoreDataResponse response = wire.client.getGraphStoreData(request);
+                    JSONObject sent = JSONObject.parseObject(new String(wire.body, StandardCharsets.UTF_8));
+                    assertEquals(format != null, sent.containsKey("resultFormat"));
+                    assertEquals(format, sent.getString("resultFormat"));
+                    assertEquals(JSONObject.parse(cell), response.getData().getValues().get(0).get(0));
+                    wire.check("query", Consts.CONST_SLS_JSON, version, null);
+                }
+            }
+        }
     }
 
     @Test
@@ -189,19 +232,10 @@ public class GraphStoreDataTest {
     @Test
     public void malformedRowsFailWithoutPartialResultsOrRetries() throws Exception {
         try (Wire wire = new Wire(new ClientConfiguration(), null)) {
-            for (String bad : new String[]{"", "null", "[]", "{}", ROWS + "{}", ROWS + "\u0000tail",
+            for (String bad : new String[]{"[]", ROWS + "{}", ROWS + "\u0000tail",
                     ROWS.replace("\\u0000", "\\u00xz"),
                     "{\"header\":[],\"data\":[],\"meta\":{}}"}) {
                 wire.bad(bad.getBytes(StandardCharsets.UTF_8));
-            }
-            for (String field : new String[]{"data", "meta", "fields", "values", "elapsedMs", "truncated", "warnings"}) {
-                for (boolean missing : new boolean[]{true, false}) {
-                    JSONObject value = JSONObject.parseObject(ROWS);
-                    JSONObject target = value.containsKey(field) ? value
-                            : value.getJSONObject("data").containsKey(field) ? value.getJSONObject("data") : value.getJSONObject("meta");
-                    if (missing) target.remove(field); else target.put(field, null);
-                    wire.bad(JSONObject.toJSONBytes(value, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
-                }
             }
             wire.bad(new byte[]{(byte) 0xff});
             char[] brackets = new char[20000];
@@ -210,7 +244,7 @@ public class GraphStoreDataTest {
             Arrays.fill(brackets, ']');
             wire.bad((ROWS.substring(0, ROWS.length() - 1) + ",\"extra\":" + nested + new String(brackets) + "}")
                     .getBytes(StandardCharsets.UTF_8));
-            wire.responseBody = "{\"data\":{\"fields\":[],\"values\":[]},\"meta\":{\"elapsedMs\":0,\"truncated\":false,\"warnings\":[]}}".getBytes(StandardCharsets.UTF_8);
+            wire.responseBody = "{\"data\":{\"fields\":[],\"values\":[]},\"status\":\"success\"}".getBytes(StandardCharsets.UTF_8);
             assertTrue(wire.client.getGraphStoreData(QUERY).getData().getValues().isEmpty());
             char[] manyEscapes = new char[100000];
             Arrays.fill(manyEscapes, '\n');
@@ -306,14 +340,98 @@ public class GraphStoreDataTest {
         }
     }
 
+    @Test
+    public void queryOutcomeAndOptionalStats() throws Exception {
+        try (Wire wire = new Wire(new ClientConfiguration(), null)) {
+            for (String status : new String[]{"success", "incomplete", "error", "unknown", ""}) {
+                JSONObject value = JSONObject.parseObject(ROWS);
+                value.put("status", status);
+                value.put("error_code", "InvalidQuery");
+                value.put("error", "detail");
+                value.remove("stats");
+                value.remove("warnings");
+                wire.responseBody = JSONObject.toJSONBytes(value);
+                GetGraphStoreDataResponse result = wire.client.getGraphStoreData(QUERY);
+                assertEquals(status, result.getStatus());
+                assertNull(result.getStats());
+                assertNull(result.getWarnings());
+            }
+            for (String body : new String[]{"", "null", "{}", "{\"data\":null,\"status\":null,\"stats\":null,\"warnings\":null}"}) {
+                wire.responseBody = body.getBytes(StandardCharsets.UTF_8);
+                GetGraphStoreDataResponse result = wire.client.getGraphStoreData(QUERY);
+                assertNull(result.getData());
+                assertNull(result.getStatus());
+                assertNull(result.getStats());
+                assertNull(result.getWarnings());
+            }
+            for (String field : new String[]{"data", "status", "fields", "values", "rowCount", "elapsedMs", "peakMemoryBytes"}) {
+                for (boolean missing : new boolean[]{true, false}) {
+                    JSONObject value = JSONObject.parseObject(ROWS);
+                    JSONObject target = value.containsKey(field) ? value
+                            : value.getJSONObject("data").containsKey(field) ? value.getJSONObject("data") : value.getJSONObject("stats");
+                    if (missing) target.remove(field); else target.put(field, null);
+                    wire.responseBody = JSONObject.toJSONBytes(value, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue);
+                    GetGraphStoreDataResponse result = wire.client.getGraphStoreData(QUERY);
+                    if (field.equals("data")) assertNull(result.getData());
+                    if (field.equals("status")) assertNull(result.getStatus());
+                    if (field.equals("fields")) assertNull(result.getData().getFields());
+                    if (field.equals("values")) assertNull(result.getData().getValues());
+                    if (field.equals("rowCount")) assertNull(result.getStats().getRowCount());
+                    if (field.equals("elapsedMs")) assertEquals(0, result.getStats().getElapsedMs());
+                    if (field.equals("peakMemoryBytes")) assertNull(result.getStats().getPeakMemoryBytes());
+                }
+            }
+            wire.responseBody = "{\"data\":{},\"stats\":{},\"warnings\":[]}".getBytes(StandardCharsets.UTF_8);
+            GetGraphStoreDataResponse empty = wire.client.getGraphStoreData(QUERY);
+            assertNull(empty.getData().getFields());
+            assertNull(empty.getData().getValues());
+            assertNull(empty.getStats().getRowCount());
+            assertEquals(0, empty.getStats().getElapsedMs());
+            assertNull(empty.getStats().getPeakMemoryBytes());
+            assertTrue(empty.getWarnings().isEmpty());
+            wire.responseBody = "{\"stats\":{\"rowCount\":7}}".getBytes(StandardCharsets.UTF_8);
+            GetGraphStoreDataResponse partial = wire.client.getGraphStoreData(QUERY);
+            assertEquals(java.math.BigInteger.valueOf(7), partial.getStats().getRowCount());
+            assertEquals(0, partial.getStats().getElapsedMs());
+            assertNull(partial.getStats().getPeakMemoryBytes());
+            for (String number : new String[]{"-1", "18446744073709551616"}) {
+                JSONObject value = JSONObject.parseObject(ROWS);
+                java.math.BigInteger expected = new java.math.BigInteger(number);
+                value.getJSONObject("stats").put("rowCount", expected);
+                value.getJSONObject("stats").put("peakMemoryBytes", expected);
+                wire.responseBody = JSONObject.toJSONBytes(value);
+                GetGraphStoreDataResponse result = wire.client.getGraphStoreData(QUERY);
+                assertEquals(expected, result.getStats().getRowCount());
+                assertEquals(expected, result.getStats().getPeakMemoryBytes());
+            }
+        }
+    }
+
+    @Test
+    public void queryErrorsPreservePublicCodeAndContext() throws Exception {
+        try (Wire wire = new Wire(new ClientConfiguration(), null)) {
+            for (int http : new int[]{400, 403, 500}) {
+                wire.status = http;
+                LogException error = expect("ServiceError", () -> wire.client.getGraphStoreData(QUERY));
+                assertEquals(http, error.GetHttpCode());
+                assertEquals("request-id", error.GetRequestId());
+                assertEquals("failed", error.GetErrorMessage());
+            }
+            for (String bad : new String[]{"{}", "{\"status\":\"error\",\"error_code\":null,\"error\":\"failed\"}"}) {
+                expect("InvalidErrorResponse", () -> wire.client.ErrorCheck(JSONObject.parseObject(bad), "request-id", 400, bad));
+            }
+        }
+    }
+
     private static void assertRows(GetGraphStoreDataResponse result) {
         assertEquals("request-id", result.GetRequestId());
         assertEquals(Arrays.asList("a", "b", "c"), result.getData().getFields());
         assertEquals(Arrays.asList(null, "", "雪\u0000"), result.getData().getValues().get(0));
         assertEquals(Arrays.asList("9223372036854775808", "[1,2]", "true"), result.getData().getValues().get(1));
-        assertEquals(Long.MIN_VALUE, result.getMeta().getElapsedMs());
-        assertTrue(result.getMeta().isTruncated());
-        assertEquals(Arrays.asList("雪"), result.getMeta().getWarnings());
+        assertEquals(Long.MIN_VALUE, result.getStats().getElapsedMs());
+        assertEquals("incomplete", result.getStatus());
+        assertEquals(new java.math.BigInteger("18446744073709551615"), result.getStats().getPeakMemoryBytes());
+        assertEquals(Arrays.asList("雪"), result.getWarnings());
     }
 
     private interface Call { void run() throws LogException; }
@@ -350,7 +468,10 @@ public class GraphStoreDataTest {
             response.setStatusCode(status);
             response.getHeaders().putAll(responseHeaders);
             response.addHeader(Consts.CONST_X_SLS_REQUESTID, "request-id");
-            byte[] bytes = status == 200 ? responseBody : "{\"errorCode\":\"ServiceError\",\"errorMessage\":\"failed\"}".getBytes(StandardCharsets.UTF_8);
+            String errorBody = uri.endsWith("/query")
+                    ? "{\"status\":\"error\",\"error_code\":\"ServiceError\",\"error\":\"failed\"}"
+                    : "{\"errorCode\":\"ServiceError\",\"errorMessage\":\"failed\"}";
+            byte[] bytes = status == 200 ? responseBody : errorBody.getBytes(StandardCharsets.UTF_8);
             response.setContent(new ByteArrayInputStream(bytes));
             if (status != 200) response.setErrorResponseAsString(new String(bytes, StandardCharsets.UTF_8));
             return response;
